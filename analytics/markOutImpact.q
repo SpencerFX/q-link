@@ -123,10 +123,9 @@
 //--------------------------------------------------------------------
 // tighter grid: -10s..+60s, resolution biased toward the seconds
 // immediately after the order rather than +/-10 minutes
-.impact.gridSecs:.util.buildGrid[
-  (0.5*1+til 20),(11+til 50)f ]                    / 0.5s..10s, then 11s..60s
-.impact.gridSecs:.impact.gridSecs where .impact.gridSecs>=-10
-.impact.gridNS:.util.toTimespan .impact.gridSecs
+.impact.gridSecs:.util.buildGrid[(0.5*1+til 20),(11+til 50)];
+.impact.gridSecs:.impact.gridSecs where .impact.gridSecs>=-10;
+.impact.gridNS:.util.toTimespan .impact.gridSecs;
 
 // .impact.calc[orders;book] - batch calculation.
 //   orders: ([] orderID; orderTime:`timestamp$(); orderRate:`float$();
@@ -167,18 +166,14 @@
 //--------------------------------------------------------------------
 // .impact real-time (incremental) path - same shape as markout
 //--------------------------------------------------------------------
-.impact.pending:([orderID:`long$(); offsetIdx:`int$()]
-  sym:`symbol$(); side:`symbol$(); targetTime:`timestamp$(); orderRate:`float$())
-
-.impact.completed:([orderID:`long$(); offsetIdx:`int$()]
-  offsetSec:`float$(); mid:`float$(); impact:`float$(); matchedTime:`timestamp$())
-
+.impact.pending:([orderID:`long$(); offsetIdx:`int$()] sym:`symbol$(); side:`symbol$(); targetTime:`timestamp$(); orderRate:`float$())
+.impact.completed:([orderID:`long$(); offsetIdx:`int$()] offsetSec:`float$(); mid:`float$(); impact:`float$(); matchedTime:`timestamp$())
 .impact.onOrder:{[ord]
   n:count .impact.gridSecs;
   rows:([]orderID:n#ord`orderID; offsetIdx:til n;
     sym:n#ord`sym; side:n#ord`side;
     targetTime:ord[`orderTime]+.impact.gridNS; orderRate:n#ord`orderRate);
-  `.impact.pending upsert rows }
+  `.impact.pending upsert rows };
 
 .impact.onBook:{[bk]
   hits:select from .impact.pending where sym=bk`sym, targetTime<=bk`time;
@@ -190,5 +185,5 @@
       impact:dirSign*(bk[`mid]-orderRate),
       matchedTime:bk`time
       from hits;
-    delete from `.impact.pending where (orderID;offsetIdx) in hits[`orderID`offsetIdx]] }
+    delete from `.impact.pending where (orderID;offsetIdx) in hits[`orderID`offsetIdx]]};
 //====================================================================
