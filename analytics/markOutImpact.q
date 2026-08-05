@@ -1,5 +1,4 @@
 //====================================================================
-//
 // Standalone functions: FX Markout & Market Impact
 //
 // General-purpose kdb+/q implementations of two related but distinct
@@ -19,16 +18,11 @@
 // one long table, then a single asof join (aj) against a sorted,
 // attributed reference-rate series - see the accompanying "Computing
 // FX Markouts in kdb+" writeup for the reasoning behind this shape.
-//
-// This is generic, reusable code - not a description of any specific
-// proprietary system.
-//
 //====================================================================
 
 //--------------------------------------------------------------------
 // Shared utilities
 //--------------------------------------------------------------------
-
 // .util.buildGrid[secs] - build a symmetric, non-overlapping time-
 // offset grid (as floats, in seconds) from a strictly ascending
 // vector of positive offsets. Returns a sorted vector with no
@@ -52,7 +46,6 @@
 //--------------------------------------------------------------------
 // .markout - client deal markout
 //--------------------------------------------------------------------
-
 // standard grid: sub-second near the trade, coarsening out to 10min
 .markout.gridSecs:.util.buildGrid[
   (0.1*1+til 10),(2+til 14),30 60 120 180 300 600f ]
@@ -99,7 +92,6 @@
 //--------------------------------------------------------------------
 // .markout real-time (incremental) path
 //--------------------------------------------------------------------
-
 // working state: one row per (trade, offset) still awaiting a rate
 .markout.pending:([tradeID:`long$(); offsetIdx:`int$()]
   sym:`symbol$(); targetTime:`timestamp$(); tradeRate:`float$())
@@ -127,9 +119,8 @@
     delete from `.markout.pending where (tradeID;offsetIdx) in hits[`tradeID`offsetIdx]] }
 
 //--------------------------------------------------------------------
-// .marketImpact - order/execution impact on the market book
+// .impact - order/execution impact on the market book
 //--------------------------------------------------------------------
-
 // tighter grid: -10s..+60s, resolution biased toward the seconds
 // immediately after the order rather than +/-10 minutes
 .impact.gridSecs:.util.buildGrid[
@@ -174,9 +165,8 @@
   select meanImpactBps:1e4*avg impact by sym,side,offsetSec from t }
 
 //--------------------------------------------------------------------
-// .marketImpact real-time (incremental) path - same shape as markout
+// .impact real-time (incremental) path - same shape as markout
 //--------------------------------------------------------------------
-
 .impact.pending:([orderID:`long$(); offsetIdx:`int$()]
   sym:`symbol$(); side:`symbol$(); targetTime:`timestamp$(); orderRate:`float$())
 
