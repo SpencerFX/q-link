@@ -1,4 +1,5 @@
 //====================================================================
+//
 // Synthetic data generator (GBM) for testing .markout / .marketImpact
 //
 // Generates a reference mid-rate series via Geometric Brownian
@@ -17,15 +18,16 @@
 //--------------------------------------------------------------------
 // Random normals (Box-Muller) - base q has no native Gaussian sampler
 //--------------------------------------------------------------------
+
 .util.randNorm:{[n]
   u1:1e-10+(1-1e-10)*n?1f;
   u2:n?1f;
-  sqrt[-2*log u1]*cos[2*acos[-1]*u2]
- };
+  sqrt[-2*log u1]*cos[2*acos[-1]*u2] }
 
 //--------------------------------------------------------------------
 // GBM path
 //--------------------------------------------------------------------
+
 // .gbm.path[s0;mu;sigma;dtSecs;n] - n-step GBM price path.
 //   s0    starting price
 //   mu    annualized-style drift, expressed per SECOND (small, e.g. 0)
@@ -35,24 +37,24 @@
 .gbm.path:{[s0;mu;sigma;dtSecs;n]
   z:.util.randNorm[n];
   logIncr:(mu-0.5*sigma*sigma)*dtSecs + sigma*sqrt[dtSecs]*z;
-  s0*prds exp logIncr
- };
+  s0*prds exp logIncr }
 
 //--------------------------------------------------------------------
 // Rate series
 //--------------------------------------------------------------------
+
 // .synth.genRateSeries[sym;startTime;durationSecs;dtSecs;s0;mu;sigma]
 // -> ([] time; sym; mid)   sorted by construction.
 .synth.genRateSeries:{[sym;startTime;durationSecs;dtSecs;s0;mu;sigma]
   n:`long$durationSecs%dtSecs;
   times:startTime+`timespan$(`long$1e9*dtSecs)*til n;
   mids:.gbm.path[s0;mu;sigma;dtSecs;n];
-  ([]time:times; sym:n#sym; mid:mids)
- };
+  ([]time:times; sym:n#sym; mid:mids) }
 
 //--------------------------------------------------------------------
 // Trades, sampled off a rate series (for .markout testing)
 //--------------------------------------------------------------------
+
 // .synth.genTrades[ccy;n;rateTab;spreadBps] - n trades at random
 // existing tick times, rate = that tick's mid plus uniform noise in
 // +/- spreadBps (crude bid/ask/slippage stand-in). With a driftless
@@ -69,17 +71,18 @@
   idx:n?count sub;
   picked:sub idx;
   noise:1+(spreadBps*1e-4)*-1+2*n?1f;
-  ([]tradeID:til n; tradeTime:picked`time; tradeRate:picked[`mid]*noise; sym:n#ccy)
- };
+  ([]tradeID:til n; tradeTime:picked`time; tradeRate:picked[`mid]*noise; sym:n#ccy) }
 
 //--------------------------------------------------------------------
 // Market-impact injection - bakes a KNOWN temp/perm signature into
 // the rate series following a chosen order time, so you can check
 // .marketImpact.decompose recovers it.
 //--------------------------------------------------------------------
+
 // impact curve in bps: starts at tempBps at tau=0, decays
 // exponentially (given half-life) down toward permBps as tau grows.
-.synth.impactCurveBps:{[tau;tempBps;permBps;halfLifeSecs] permBps+(tempBps-permBps)*exp neg(log 2)*(0|tau)%halfLifeSecs};
+.synth.impactCurveBps:{[tau;tempBps;permBps;halfLifeSecs]
+  permBps+(tempBps-permBps)*exp neg(log 2)*(0|tau)%halfLifeSecs }
 
 // .synth.injectImpact[rateTab;orderTime;sym;dirSign;tempBps;permBps;halfLifeSecs]
 // -> rateTab with mid multiplicatively bumped for sym at/after
@@ -90,8 +93,7 @@
   mask:(rateTab[`sym]=sym) and rateTab[`time]>=orderTime;
   tau:`float$(rateTab[`time]-orderTime)%1e9;
   bump:dirSign*.synth.impactCurveBps[tau;tempBps;permBps;halfLifeSecs]*1e-4;
-  update mid:mid*(1+mask*bump) from rateTab
- };
+  update mid:mid*(1+mask*bump) from rateTab }
 
 // .synth.injectImpacts[rateTab;spec] - apply a whole table of planned
 // injections in one call. spec: ([] orderTime;sym;dirSign;tempBps;
@@ -100,8 +102,7 @@
 // same sym don't overlap and contaminate each other.
 .synth.injectImpacts:{[rateTab;spec]
   {[rt;row] .synth.injectImpact[rt;row`orderTime;row`sym;row`dirSign;
-    row`tempBps;row`permBps;row`halfLifeSecs]}/[rateTab;spec]
- };
+    row`tempBps;row`permBps;row`halfLifeSecs]}/[rateTab;spec] }
 
 // .synth.ordersFromSpec[spec;baselineRateTab] - build the orders
 // table .marketImpact.calc expects, using orderRate captured from a
@@ -116,17 +117,17 @@
 // those iterators insert their own stack frame between the defining
 // function and the lambda, and q's local-variable visibility only
 // reaches one level up. Global names don't have that problem.
-.synth.getMid:{[rt;ccy;t] last (select mid from rt where sym=ccy,time<=t)`mid};
+.synth.getMid:{[rt;ccy;t] last (select mid from rt where sym=ccy,time<=t)`mid}
 
 .synth.ordersFromSpec:{[spec;baselineRateTab]
   rates:{[rt;row] .synth.getMid[rt;row`sym;row`orderTime]}[baselineRateTab;] each spec;
   ([]orderID:til count spec; orderTime:spec`orderTime; orderRate:rates;
-    sym:spec`sym; side:?[spec[`dirSign]=1f;`buy;`sell])
- };
+    sym:spec`sym; side:?[spec[`dirSign]=1f;`buy;`sell]) }
 
 //--------------------------------------------------------------------
 // End-to-end scenario builder
 //--------------------------------------------------------------------
+
 // .synth.buildScenario[] - one call that returns a dictionary with:
 //   rate         the (impact-injected) reference rate series
 //   trades       trades sampled for .markout testing
@@ -137,9 +138,11 @@
   sym:`EURUSD;
   start:.z.p - 0D06:00:00;      / 6-hour synthetic session
   dtSecs:0.5;                   / tick every 500ms
+
   // baseline path: mild drift so markout has a non-zero, checkable
   // expected value (expected markout at offset D ~ mu*D)
   base:.synth.genRateSeries[sym;start;6*60*60;dtSecs;1.1000;5e-8;2e-5];
+
   // plan five well-separated impact events, alternating buy/sell,
   // spaced 40 minutes apart so their 60s-max impact windows never overlap
   orderTimes:start+`timespan$1e9*40*60*1+til 5;
@@ -148,11 +151,12 @@
     tempBps:3.5 5.0 2.0 6.5 4.0;
     permBps:1.0 2.5 0.2 3.0 1.5;
     halfLifeSecs:8 15 5 20 10f);
+
   orders:.synth.ordersFromSpec[spec;base];
   rate:.synth.injectImpacts[base;spec];
   trades:.synth.genTrades[sym;2000;base;0.3];
-  `rate`trades`orders`groundTruth!(rate;trades;orders;spec)
- };
+
+  `rate`trades`orders`groundTruth!(rate;trades;orders;spec) }
 
 // .synth.checkImpactRecovery[scenario;decomposeFn] - convenience: run
 // your .marketImpact.calc + .marketImpact.decompose over the
@@ -164,8 +168,7 @@
   rec:update temporaryImpactBps:1e4*temporaryImpact,
     permanentImpactBps:1e4*permanentImpact from rec;
   gt:update orderID:til count scenario`groundTruth from scenario`groundTruth;
-  gt lj `orderID xkey select orderID,temporaryImpactBps,permanentImpactBps from rec
- };
+  gt lj `orderID xkey select orderID,temporaryImpactBps,permanentImpactBps from rec }
 
 //====================================================================
 // demo (uncomment to run once markout_marketImpact.q is loaded)
@@ -175,5 +178,5 @@
 / scenario`groundTruth                                         
 / .synth.checkImpactRecovery[scenario;.impact.calc;.impact.decompose]
 / markout on synthetic trades
-/ meta .markout.calc[scenario`trades;scenario`rate]
+.markout.calc[scenario`trades;scenario`rate]
 //====================================================================
