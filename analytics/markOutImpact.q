@@ -30,44 +30,53 @@
 // input is assumed non-overlapping and ascending.
 .util.buildGrid:{[posOffsets]
   pos:asc distinct posOffsets except 0f;
-  (reverse neg pos),0f,pos }
+  (reverse neg pos),0f,pos 
+ };
 
 // .util.toTimespan[secs] - cast a vector/atom of fractional seconds
 // to a q timespan, ready to add onto a timestamp column.
-.util.toTimespan:{[secs] `timespan$1e9*secs }
+.util.toTimespan:{[secs] `timespan$1e9*secs};
 
-// .util.explode[rows;offsetCol;timeCol;gridNS] - cross rows against
-// a (pre-cast, invariant) timespan grid and compute the per-row
-// target lookup time. `timeCol` is the name of the anchor-time
-// column already present in `rows` (e.g. `tradeTime or `orderTime).
+// .util.explode[rows;timeCol;gridNS] - cross rows against a
+// (pre-cast, invariant) timespan grid and compute the per-row
+// target lookup time. `timeCol` is the SYMBOL name of the anchor-
+// time column already present in `rows` (e.g. `tradeTime or
+// `orderTime). Note: crossed is bound to a name first so timeCol
+// can be used for a plain dynamic column lookup (crossed[timeCol]);
+// `update` clauses only accept literal column names in the
+// calculation text, so a variable can't be used there directly -
+// and using $ for a "lookup column by symbol" (timeCol$rows) is
+// wrong too, since $ with a symbol left-arg means Cast/Enumerate,
+// not "index this table by column name".
 .util.explode:{[rows;timeCol;gridNS]
-  update targetTime:(timeCol$rows)+offset from rows cross ([]offset:gridNS) }
-
+  crossed:rows cross ([]offset:gridNS);
+  update targetTime:crossed[timeCol]+offset from crossed
+ };
 //--------------------------------------------------------------------
 // .markout - client deal markout
 //--------------------------------------------------------------------
 // standard grid: sub-second near the trade, coarsening out to 10min
-.markout.gridSecs:.util.buildGrid[
-  (0.1*1+til 10),(2+til 14),30 60 120 180 300 600f ]
-.markout.gridNS:.util.toTimespan .markout.gridSecs
+.markout.gridSecs:.util.buildGrid[(0.1*1+til 10),(2+til 14),30 60 120 180 300 600f];
+.markout.gridNS:.util.toTimespan .markout.gridSecs;
 
 // .markout.calc[trade;rate] - batch/ad-hoc markout calculation.
 //   trade: ([] tradeID; tradeTime:`timestamp$(); tradeRate:`float$(); sym)
 //   rate:  ([] time:`timestamp$(); sym; mid:`float$())  -- sorted by
 //          time within sym, ideally with `p#sym and time sorted.
-// Returns one row per trade, with nested `grids`/`aftermath` columns
+// Returns one row per trade, with nested `grids`/`markout` columns
 // plus the matched rate timestamp (for staleness checks) and a
 // stale flag.
 .markout.calc:{[trade;rate]
   req:`sym`targetTime xasc .util.explode[trade;`tradeTime;.markout.gridNS];
-  res:aj[`sym`targetTime; req; `sym`time xasc rate];
+  bk:update targetTime:time from rate;
+  res:aj[`sym`targetTime; req; `sym`targetTime xasc `sym`targetTime`time`mid xcols bk];
   res:update
     markoutVal:mid-tradeRate,
     offsetSec:`float$(targetTime-tradeTime)%1e9,
     stale:(targetTime-time)>0D00:00:02
     from res;
-  select grids:offsetSec, aftermath:markoutVal, matchedTime:time, stale:stale
-    by tradeID from res }
+  select grids:offsetSec, markoutVal, matchedTime:time, stale:stale by tradeID from res
+ };
 
 // .markout.calcDate[d;tradeGetter;rateGetter] - single-partition
 // wrapper suitable for `peach` across dates (see .markout.calcAll).
@@ -77,8 +86,7 @@
 // .markout.calcAll[dates;tradeGetter;rateGetter] - parallelize the
 // batch calc across independent dates. Benchmark with \ts before
 // assuming peach wins at your typical daily row count.
-.markout.calcAll:{[dates;tradeGetter;rateGetter]
-  raze .markout.calcDate[;tradeGetter;rateGetter] peach dates }
+.markout.calcAll:{[dates;tradeGetter;rateGetter] raze .markout.calcDate[;tradeGetter;rateGetter] peach dates};
 
 // .markout.notionalWeighted[markoutTab;deals] - aggregate markout by
 // sym and offset, weighted by trade notional rather than a plain
@@ -87,24 +95,24 @@
 .markout.notionalWeighted:{[markoutRows;deals]
   j:(`tradeID xkey deals)[;`notional`sym] (`tradeID xkey markoutRows)`tradeID;
   t:update notional:j`notional, sym:j`sym from markoutRows;
-  select markoutBps:1e4*wavg[notional;aftermath] by sym,grids from t where not stale }
+  select markoutBps:1e4*wavg[notional;markoutVal] by sym,grids from t where not stale
+ };
 
 //--------------------------------------------------------------------
 // .markout real-time (incremental) path
 //--------------------------------------------------------------------
 // working state: one row per (trade, offset) still awaiting a rate
-.markout.pending:([tradeID:`long$(); offsetIdx:`int$()]
-  sym:`symbol$(); targetTime:`timestamp$(); tradeRate:`float$())
+.markout.pending:([tradeID:`long$(); offsetIdx:`int$()]sym:`symbol$(); targetTime:`timestamp$(); tradeRate:`float$());
 
-.markout.completed:([tradeID:`long$(); offsetIdx:`int$()]
-  offsetSec:`float$(); mid:`float$(); markoutVal:`float$(); matchedTime:`timestamp$())
+.markout.completed:([tradeID:`long$(); offsetIdx:`int$()]offsetSec:`float$(); mid:`float$(); markoutVal:`float$(); matchedTime:`timestamp$());
 
 // call on every new trade: register all offsets as pending
 .markout.onTrade:{[tr]
   n:count .markout.gridSecs;
   rows:([]tradeID:n#tr`tradeID; offsetIdx:til n;
     sym:n#tr`sym; targetTime:tr[`tradeTime]+.markout.gridNS; tradeRate:n#tr`tradeRate);
-  `.markout.pending upsert rows }
+  `.markout.pending upsert rows 
+ };
 
 // call on every new rate tick: complete any offsets now reachable
 .markout.onRate:{[rt]
@@ -116,17 +124,17 @@
       markoutVal:rt[`mid]-tradeRate,
       matchedTime:rt`time
       from hits;
-    delete from `.markout.pending where (tradeID;offsetIdx) in hits[`tradeID`offsetIdx]] }
+    delete from `.markout.pending where (tradeID;offsetIdx) in hits[`tradeID`offsetIdx]]
+ };
 
 //--------------------------------------------------------------------
 // .impact - order/execution impact on the market book
 //--------------------------------------------------------------------
 // tighter grid: -10s..+60s, resolution biased toward the seconds
 // immediately after the order rather than +/-10 minutes
-.impact.gridSecs:.util.buildGrid[
-  (0.5*1+til 20),(11+til 50)f ]                    / 0.5s..10s, then 11s..60s
-.impact.gridSecs:.impact.gridSecs where .impact.gridSecs>=-10
-.impact.gridNS:.util.toTimespan .impact.gridSecs
+.impact.gridSecs:.util.buildGrid[(0.5*1+til 20),(11+til 50)];
+.impact.gridSecs:.impact.gridSecs where .impact.gridSecs>=-10;
+.impact.gridNS:.util.toTimespan .impact.gridSecs;
 
 // .impact.calc[orders;book] - batch calculation.
 //   orders: ([] orderID; orderTime:`timestamp$(); orderRate:`float$();
@@ -137,13 +145,15 @@
 // buyer if positive, i.e. price kept rising after a buy).
 .impact.calc:{[orders;book]
   req:`sym`targetTime xasc .util.explode[orders;`orderTime;.impact.gridNS];
-  res:aj[`sym`targetTime; req; `sym`time xasc book];
+  bk:`sym`targetTime xasc `targetTime xcol book;
+  res:aj[`sym`targetTime; req; bk];
   res:update
     rawMove:mid-orderRate,
     offsetSec:`float$(targetTime-orderTime)%1e9,
     dirSign:?[side=`buy;1f;-1f]
     from res;
-  update impact:dirSign*rawMove from res }
+  update impact:dirSign*rawMove from res
+ };
 
 // .impact.decompose[calcRes;peakWindowSecs;permWindowSecs] -
 // split each order's impact curve into a temporary (peak, within the
@@ -151,34 +161,33 @@
 // `permWindowSecs) component - the standard temporary/permanent
 // impact decomposition.
 .impact.decompose:{[calcRes;peakWindowSecs;permWindowSecs]
-  peak:select temporaryImpact:max impact by orderID from
-    select from calcRes where offsetSec within (0;peakWindowSecs);
-  perm:select permanentImpact:avg impact by orderID from
-    select from calcRes where offsetSec>=permWindowSecs;
-  peak lj perm }
+  peak:select temporaryImpact:max impact by orderID from select from calcRes where offsetSec within (0;peakWindowSecs);
+  perm:select permanentImpact:avg impact by orderID from select from calcRes where offsetSec>=permWindowSecs;
+  peak lj perm
+ };
 
 // .impact.bySymSide[calcRes;orders] - aggregate mean impact by
 // sym, side and offset - the shape you'd plot as an impact curve.
 .impact.bySymSide:{[calcRes;orders]
   j:(`orderID xkey orders)[;`side`sym] (`orderID xkey calcRes)`orderID;
   t:update side:j`side, sym:j`sym from calcRes;
-  select meanImpactBps:1e4*avg impact by sym,side,offsetSec from t }
+  select meanImpactBps:1e4*avg impact by sym,side,offsetSec from t
+ };
 
 //--------------------------------------------------------------------
 // .impact real-time (incremental) path - same shape as markout
 //--------------------------------------------------------------------
-.impact.pending:([orderID:`long$(); offsetIdx:`int$()]
-  sym:`symbol$(); side:`symbol$(); targetTime:`timestamp$(); orderRate:`float$())
+.impact.pending:([orderID:`long$(); offsetIdx:`int$()] sym:`symbol$(); side:`symbol$(); targetTime:`timestamp$(); orderRate:`float$());
 
-.impact.completed:([orderID:`long$(); offsetIdx:`int$()]
-  offsetSec:`float$(); mid:`float$(); impact:`float$(); matchedTime:`timestamp$())
+.impact.completed:([orderID:`long$(); offsetIdx:`int$()] offsetSec:`float$(); mid:`float$(); impact:`float$(); matchedTime:`timestamp$());
 
 .impact.onOrder:{[ord]
   n:count .impact.gridSecs;
   rows:([]orderID:n#ord`orderID; offsetIdx:til n;
     sym:n#ord`sym; side:n#ord`side;
     targetTime:ord[`orderTime]+.impact.gridNS; orderRate:n#ord`orderRate);
-  `.impact.pending upsert rows }
+  `.impact.pending upsert rows
+ };
 
 .impact.onBook:{[bk]
   hits:select from .impact.pending where sym=bk`sym, targetTime<=bk`time;
@@ -190,5 +199,6 @@
       impact:dirSign*(bk[`mid]-orderRate),
       matchedTime:bk`time
       from hits;
-    delete from `.impact.pending where (orderID;offsetIdx) in hits[`orderID`offsetIdx]] }
+    delete from `.impact.pending where (orderID;offsetIdx) in hits[`orderID`offsetIdx]]
+ };
 //====================================================================
