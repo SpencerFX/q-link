@@ -171,9 +171,7 @@
 // demo (uncomment to run once markout_marketImpact.q is loaded)
 //====================================================================
 / scenario:.synth.buildScenario[];
-/ injected truth
-/ scenario`groundTruth                                         
-/ .synth.checkImpactRecovery[scenario;.impact.calc;.impact.decompose]
-/ markout on synthetic trades
-/ meta .markout.calc[scenario`trades;scenario`rate]
+/ scenario`groundTruth;
+/ .synth.checkImpactRecovery[scenario;.impact.calc;.impact.decompose];
+/ .markout.calc[scenario`trades;scenario`rate];
 //====================================================================

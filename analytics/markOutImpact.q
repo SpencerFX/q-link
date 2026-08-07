@@ -1,7 +1,7 @@
 //====================================================================
 // Standalone functions: FX Markout & Market Impact
 //
-// General-purpose kdb+/q implementations of two related but distinct
+// General-purpose kdb+/q implementations of two
 // post-trade/post-order price-deviation analyses:
 //
 //   .markout.*       - client DEAL markout: how the market mid moves
@@ -13,11 +13,6 @@
 //                       grid from -10 seconds to +60 seconds, split
 //                       into a temporary (peak) and permanent
 //                       (post-decay) component.
-//
-// Both share the same core technique: explode (rows x offsets) into
-// one long table, then a single asof join (aj) against a sorted,
-// attributed reference-rate series - see the accompanying "Computing
-// FX Markouts in kdb+" writeup for the reasoning behind this shape.
 //====================================================================
 
 //--------------------------------------------------------------------
@@ -52,6 +47,7 @@
   crossed:rows cross ([]offset:gridNS);
   update targetTime:crossed[timeCol]+offset from crossed
  };
+
 //--------------------------------------------------------------------
 // .markout - client deal markout
 //--------------------------------------------------------------------
@@ -80,8 +76,7 @@
 
 // .markout.calcDate[d;tradeGetter;rateGetter] - single-partition
 // wrapper suitable for `peach` across dates (see .markout.calcAll).
-.markout.calcDate:{[d;tradeGetter;rateGetter]
-  .markout.calc[tradeGetter d; rateGetter d] }
+.markout.calcDate:{[d;tradeGetter;rateGetter].markout.calc[tradeGetter d; rateGetter d]};
 
 // .markout.calcAll[dates;tradeGetter;rateGetter] - parallelize the
 // batch calc across independent dates. Benchmark with \ts before
