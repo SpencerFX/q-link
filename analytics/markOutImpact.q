@@ -3,7 +3,6 @@
 //
 // General-purpose kdb+/q implementations of two
 // post-trade/post-order price-deviation analyses:
-//
 //   .markout.*       - client DEAL markout: how the market mid moves
 //                       relative to a trade's execution rate, at a
 //                       grid of offsets from -10 minutes to +10 minutes.
@@ -18,7 +17,6 @@
 //--------------------------------------------------------------------
 // Shared utilities
 //--------------------------------------------------------------------
-// .util.buildGrid[secs] - build a symmetric, non-overlapping time-
 // offset grid (as floats, in seconds) from a strictly ascending
 // vector of positive offsets. Returns a sorted vector with no
 // duplicate-removal / sort step required downstream, since the
@@ -36,13 +34,7 @@
 // (pre-cast, invariant) timespan grid and compute the per-row
 // target lookup time. `timeCol` is the SYMBOL name of the anchor-
 // time column already present in `rows` (e.g. `tradeTime or
-// `orderTime). Note: crossed is bound to a name first so timeCol
-// can be used for a plain dynamic column lookup (crossed[timeCol]);
-// `update` clauses only accept literal column names in the
-// calculation text, so a variable can't be used there directly -
-// and using $ for a "lookup column by symbol" (timeCol$rows) is
-// wrong too, since $ with a symbol left-arg means Cast/Enumerate,
-// not "index this table by column name".
+// `orderTime)
 .util.explode:{[rows;timeCol;gridNS]
   crossed:rows cross ([]offset:gridNS);
   update targetTime:crossed[timeCol]+offset from crossed
