@@ -137,7 +137,7 @@
 //--------------------------------------------------------------------
 // .markout real-time (incremental) path
 //--------------------------------------------------------------------
-//@func  | 
+//@func  | .markout.onTrade
 //@param  | start | -9 | float second
 //@desc
 // call on every new trade: register all offsets as pending
@@ -149,7 +149,7 @@
   `.markout.pending upsert rows 
  };
 
-//@func  | 
+//@func  | .markout.onRate
 //@param  | start | -9 | float second
 //@desc
 // call on every new rate tick: complete any offsets now reachable
