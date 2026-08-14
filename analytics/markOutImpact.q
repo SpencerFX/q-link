@@ -17,7 +17,7 @@
 // Shared utilities
 //--------------------------------------------------------------------
 //@func  | .util.buildGrid
-//@param  | start | -9 | float second
+//@param  | posOffsets | float
 //@desc
 // offset grid (as floats, in seconds) from a strictly ascending
 // vector of positive offsets. Returns a sorted vector with no
@@ -30,7 +30,7 @@
  };
 
 //@func  | .util.toTimespan
-//@param  | start | -9 | float second
+//@param  | secs | float
 //@desc
 // cast a vector/atom of fractional seconds
 // to a q timespan, ready to add onto a timestamp column.
@@ -38,9 +38,9 @@
 .util.toTimespan:{[secs] `timespan$1e9*secs};
 
 //@func  | .util.explode
-//@param  | start | -9 | float second
-//@param  | start | -9 | float second
-//@param  | start | -9 | float second
+//@param  | rows | table
+//@param  | timeCol | symbol
+//@param  | gridNS | timespan
 //@desc
 // cross rows against a (pre-cast, invariant) timespan grid and compute the per-row
 // target lookup time. `timeCol` is the SYMBOL name of the anchor-
@@ -79,8 +79,8 @@
 // .markout - client deal markout
 //--------------------------------------------------------------------
 //@func  | .markout.calc
-//@param  | start | -9 | float second
-//@param  | start | -9 | float second
+//@param  | trade | table
+//@param  | rate | table
 //@desc
 //   trade: ([] tradeID; tradeTime:`timestamp$(); tradeRate:`float$(); sym)
 //   rate:  ([] time:`timestamp$(); sym; mid:`float$())  -- sorted by
@@ -102,18 +102,18 @@
  };
 
 //@func  |  .markout.calcDate
-//@param  | start | -9 | float second
-//@param  | start | -9 | float second
-//@param  | start | -9 | float second
+//@param  | d | date
+//@param  | tradeGetter | function
+//@param  | rateGetter | function
 //@desc
 // wrapper suitable for `peach` across dates (see .markout.calcAll).
 //@desc
 .markout.calcDate:{[d;tradeGetter;rateGetter].markout.calc[tradeGetter d; rateGetter d]};
 
 //@func  | .markout.calcAll
-//@param  | start | -9 | float second
-//@param  | start | -9 | float second
-//@param  | start | -9 | float second
+//@param  | dates | date
+//@param  | tradeGetter | function
+//@param  | rateGetter | function
 //@desc
 // parallelize the batch calc across independent dates. Benchmark with \ts before
 // assuming peach wins at your typical daily row count.
@@ -121,9 +121,9 @@
 .markout.calcAll:{[dates;tradeGetter;rateGetter] raze .markout.calcDate[;tradeGetter;rateGetter] peach dates};
 
 //@func  | .markout.notionalWeighted
-//@param  | start | -9 | float second
-//@param  | start | -9 | float second
-//@desc 
+//@param  | markoutRows | table
+//@param  | deals | table
+//@desc
 // aggregate markout by sym and offset, weighted by trade notional rather than a plain
 // average (a single large trade shouldn't count the same as a small
 // one). `deals` supplies tradeID->notional/sym.
@@ -138,7 +138,7 @@
 // .markout real-time (incremental) path
 //--------------------------------------------------------------------
 //@func  | .markout.onTrade
-//@param  | start | -9 | float second
+//@param  | tr | dict
 //@desc
 // call on every new trade: register all offsets as pending
 //@desc
@@ -150,7 +150,7 @@
  };
 
 //@func  | .markout.onRate
-//@param  | start | -9 | float second
+//@param  | rt | dict
 //@desc
 // call on every new rate tick: complete any offsets now reachable
 //@desc
@@ -170,8 +170,8 @@
 // .impact - order/execution impact on the market book
 //--------------------------------------------------------------------
 //@func  |  .impact.calc
-//@param  | start | -9 | float second
-//@param  | start | -9 | float second
+//@param  | orders | table
+//@param  | book | table
 //@desc
 //   orders: ([] orderID; orderTime:`timestamp$(); orderRate:`float$();
 //               sym; side:`symbol$())   / side: `buy`sell
@@ -193,9 +193,9 @@
  };
 
 //@func  |  .impact.decompose
-//@param  | start | -9 | float second
-//@param  | start | -9 | float second
-//@param  | start | -9 | float second
+//@param  | calcRes | table
+//@param  | peakWindowSecs | float
+//@param  | permWindowSecs | float
 //@desc
 // split each order's impact curve into a temporary (peak, within the
 // first `peakWindowSecs) and permanent (average over the tail beyond
@@ -209,8 +209,8 @@
  };
 
 //@func  | .impact.bySymSide
-//@param  | start | -9 | float second
-//@param  | start | -9 | float second
+//@param  | calcRes | table
+//@param  | orders | table
 //@desc
 // sym, side and offset - the shape you'd plot as an impact curve.
 //@desc
@@ -224,7 +224,7 @@
 // .impact real-time (incremental) path - same shape as markout
 //--------------------------------------------------------------------
 //@func  | .impact.onOrder
-//@param  | start | -9 | float second
+//@param  | ord | dict
 //@desc
 //@desc
 .impact.onOrder:{[ord]
@@ -236,7 +236,7 @@
  };
 
 //@func  | .impact.onBook
-//@param  | start | -9 | float second
+//@param  | bk | dict
 //@desc
 //@desc
 .impact.onBook:{[bk]
