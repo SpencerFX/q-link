@@ -238,7 +238,7 @@
  };
 
 //====================================================================
-// demo (uncomment to run once markout_marketImpact.q is loaded)
+// demo 
 //====================================================================
 / scenario:.synth.buildScenario[];
 / scenario`groundTruth;
