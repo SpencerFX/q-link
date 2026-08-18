@@ -22,7 +22,7 @@
 // offset grid (as floats, in seconds) from a strictly ascending
 // vector of positive offsets. Returns a sorted vector with no
 // duplicate-removal / sort step required downstream, since the
-// input is assumed non-overlapping and ascending.//@desc
+// input is assumed non-overlapping and ascending.
 //@desc
 .util.buildGrid:{[posOffsets]
   pos:asc distinct posOffsets except 0f;
@@ -166,6 +166,22 @@
     delete from `.markout.pending where (tradeID;offsetIdx) in hits[`tradeID`offsetIdx]]
  };
 
+// how long a pending row may wait past its targetTime for a matching
+// rate tick before it's given up on as dead (feed gap / dead symbol)
+.markout.pendingTTL:0D00:05:00;
+
+//@func  | .markout.sweepPending
+//@param  | now | timestamp
+//@desc
+// evict pending rows whose targetTime is more than .markout.pendingTTL
+// in the past with no matching rate tick, so a dead symbol or a gap
+// in the rate feed doesn't leak rows in `.markout.pending` forever.
+// Call periodically (e.g. off a timer) alongside `.markout.onRate`.
+//@desc
+.markout.sweepPending:{[now]
+  delete from `.markout.pending where now-targetTime>.markout.pendingTTL
+ };
+
 //--------------------------------------------------------------------
 // .impact - order/execution impact on the market book
 //--------------------------------------------------------------------
@@ -182,7 +198,7 @@
 //@desc
 .impact.calc:{[orders;book]
   req:`sym`targetTime xasc .util.explode[orders;`orderTime;.impact.gridNS];
-  bk:`sym`targetTime xasc `targetTime xcol book;
+  bk:`sym`targetTime xasc update targetTime:time from book;
   res:aj[`sym`targetTime; req; bk];
   res:update
     rawMove:mid-orderRate,
@@ -215,8 +231,7 @@
 // sym, side and offset - the shape you'd plot as an impact curve.
 //@desc
 .impact.bySymSide:{[calcRes;orders]
-  j:(`orderID xkey orders)[;`side`sym] (`orderID xkey calcRes)`orderID;
-  t:update side:j`side, sym:j`sym from calcRes;
+  t:calcRes lj `orderID xkey select orderID,side,sym from orders;
   select meanImpactBps:1e4*avg impact by sym,side,offsetSec from t
  };
 
@@ -226,6 +241,7 @@
 //@func  | .impact.onOrder
 //@param  | ord | dict
 //@desc
+// call on every new order: register all offsets as pending
 //@desc
 .impact.onOrder:{[ord]
   n:count .impact.gridSecs;
@@ -238,6 +254,7 @@
 //@func  | .impact.onBook
 //@param  | bk | dict
 //@desc
+// call on every new book tick: complete any offsets now reachable
 //@desc
 .impact.onBook:{[bk]
   hits:select from .impact.pending where sym=bk`sym, targetTime<=bk`time;
@@ -250,5 +267,20 @@
       matchedTime:bk`time
       from hits;
     delete from `.impact.pending where (orderID;offsetIdx) in hits[`orderID`offsetIdx]]
+ };
+
+// tighter TTL than markout's, matching .impact's tighter -10s/+60s grid
+.impact.pendingTTL:0D00:02:00;
+
+//@func  | .impact.sweepPending
+//@param  | now | timestamp
+//@desc
+// evict pending rows whose targetTime is more than .impact.pendingTTL
+// in the past with no matching book tick, so a dead symbol or a gap
+// in the book feed doesn't leak rows in `.impact.pending` forever.
+// Call periodically (e.g. off a timer) alongside `.impact.onBook`.
+//@desc
+.impact.sweepPending:{[now]
+  delete from `.impact.pending where now-targetTime>.impact.pendingTTL
  };
 //====================================================================

@@ -17,6 +17,12 @@
 //--------------------------------------------------------------------
 // Random normals (Box-Muller) - base q has no native Gaussian sampler
 //--------------------------------------------------------------------
+//@func  | .util.randNorm
+//@param  | n | long
+//@desc
+// generate n standard-normal samples via Box-Muller transform (base q
+// has no native Gaussian sampler).
+//@desc
 .util.randNorm:{[n]
   u1:1e-10+(1-1e-10)*n?1f;
   u2:n?1f;
@@ -26,12 +32,20 @@
 //--------------------------------------------------------------------
 // GBM path
 //--------------------------------------------------------------------
-// .gbm.path[s0;mu;sigma;dtSecs;n] - n-step GBM price path.
+//@func  | .gbm.path
+//@param  | s0 | float
+//@param  | mu | float
+//@param  | sigma | float
+//@param  | dtSecs | float
+//@param  | n | long
+//@desc
+// n-step GBM price path (path length is n+1 including s0).
 //   s0    starting price
 //   mu    annualized-style drift, expressed per SECOND (small, e.g. 0)
 //   sigma volatility, also per second
 //   dtSecs step size in seconds
-//   n     number of steps (path length is n+1 including s0)
+//   n     number of steps
+//@desc
 .gbm.path:{[s0;mu;sigma;dtSecs;n]
   z:.util.randNorm[n];
   logIncr:(mu-0.5*sigma*sigma)*dtSecs + sigma*sqrt[dtSecs]*z;
@@ -41,8 +55,17 @@
 //--------------------------------------------------------------------
 // Rate series
 //--------------------------------------------------------------------
-// .synth.genRateSeries[sym;startTime;durationSecs;dtSecs;s0;mu;sigma]
+//@func  | .synth.genRateSeries
+//@param  | sym | symbol
+//@param  | startTime | timestamp
+//@param  | durationSecs | float
+//@param  | dtSecs | float
+//@param  | s0 | float
+//@param  | mu | float
+//@param  | sigma | float
+//@desc
 // -> ([] time; sym; mid)   sorted by construction.
+//@desc
 .synth.genRateSeries:{[sym;startTime;durationSecs;dtSecs;s0;mu;sigma]
   n:`long$durationSecs%dtSecs;
   times:startTime+`timespan$(`long$1e9*dtSecs)*til n;
@@ -53,17 +76,24 @@
 //--------------------------------------------------------------------
 // Trades, sampled off a rate series (for .markout testing)
 //--------------------------------------------------------------------
-// .synth.genTrades[ccy;n;rateTab;spreadBps] - n trades at random
-// existing tick times, rate = that tick's mid plus uniform noise in
-// +/- spreadBps (crude bid/ask/slippage stand-in). With a driftless
-// rateTab (mu=0), expected markout at every offset is ~0 for a large
-// enough n - useful as a null-hypothesis sanity check. With mu!=0,
-// expected markout at offset D is approximately mu*D.
+//@func  | .synth.genTrades
+//@param  | ccy | symbol
+//@param  | n | long
+//@param  | rateTab | table
+//@param  | spreadBps | float
+//@desc
+// n trades at random existing tick times, rate = that tick's mid plus
+// uniform noise in +/- spreadBps (crude bid/ask/slippage stand-in).
+// With a driftless rateTab (mu=0), expected markout at every offset
+// is ~0 for a large enough n - useful as a null-hypothesis sanity
+// check. With mu!=0, expected markout at offset D is approximately
+// mu*D.
 // NOTE: the parameter is `ccy`, not `sym` - inside a select/where
 // clause a bare name matching a COLUMN of the queried table always
 // resolves to that column, silently shadowing a same-named parameter
 // (and, depending on how that resolves, can surface as either a
 // silently-wrong filter or an outright rank error).
+//@desc
 .synth.genTrades:{[ccy;n;rateTab;spreadBps]
   sub:select from rateTab where sym=ccy;
   idx:n?count sub;
@@ -77,15 +107,31 @@
 // the rate series following a chosen order time, so you can check
 // .marketImpact.decompose recovers it.
 //--------------------------------------------------------------------
+//@func  | .synth.impactCurveBps
+//@param  | tau | float
+//@param  | tempBps | float
+//@param  | permBps | float
+//@param  | halfLifeSecs | float
+//@desc
 // impact curve in bps: starts at tempBps at tau=0, decays
 // exponentially (given half-life) down toward permBps as tau grows.
+//@desc
 .synth.impactCurveBps:{[tau;tempBps;permBps;halfLifeSecs] permBps+(tempBps-permBps)*exp neg(log 2)*(0|tau)%halfLifeSecs};
 
-// .synth.injectImpact[rateTab;orderTime;sym;dirSign;tempBps;permBps;halfLifeSecs]
+//@func  | .synth.injectImpact
+//@param  | rateTab | table
+//@param  | orderTime | timestamp
+//@param  | sym | symbol
+//@param  | dirSign | float
+//@param  | tempBps | float
+//@param  | permBps | float
+//@param  | halfLifeSecs | float
+//@desc
 // -> rateTab with mid multiplicatively bumped for sym at/after
 // orderTime. dirSign should be +1 for a buy (pushes price up) or -1
 // for a sell. Only rows for the given sym at or after orderTime are
 // touched; everything else passes through unchanged.
+//@desc
 .synth.injectImpact:{[rateTab;orderTime;sym;dirSign;tempBps;permBps;halfLifeSecs]
   mask:(rateTab[`sym]=sym) and rateTab[`time]>=orderTime;
   tau:`float$(rateTab[`time]-orderTime)%1e9;
@@ -93,31 +139,47 @@
   update mid:mid*(1+mask*bump) from rateTab
  };
 
-// .synth.injectImpacts[rateTab;spec] - apply a whole table of planned
-// injections in one call. spec: ([] orderTime;sym;dirSign;tempBps;
-// permBps;halfLifeSecs). Space orderTimes far enough apart (well
-// beyond your market-impact grid's max offset) so injections for the
-// same sym don't overlap and contaminate each other.
+//@func  | .synth.injectImpacts
+//@param  | rateTab | table
+//@param  | spec | table
+//@desc
+// apply a whole table of planned injections in one call. spec:
+// ([] orderTime;sym;dirSign;tempBps;permBps;halfLifeSecs). Space
+// orderTimes far enough apart (well beyond your market-impact grid's
+// max offset) so injections for the same sym don't overlap and
+// contaminate each other.
+//@desc
 .synth.injectImpacts:{[rateTab;spec]
   {[rt;row] .synth.injectImpact[rt;row`orderTime;row`sym;row`dirSign;
     row`tempBps;row`permBps;row`halfLifeSecs]}/[rateTab;spec]
  };
 
-// .synth.ordersFromSpec[spec;baselineRateTab] - build the orders
-// table .marketImpact.calc expects, using orderRate captured from a
-// PRE-injection snapshot of the rate series (i.e. what you actually
-// would have traded at, before your own footprint moved anything).
-// .synth.getMid[rt;ccy;t] - last known mid for ccy at/before time t.
-// Parameter named `ccy`, not `sym`, for the same reason as
-// genTrades above - avoids shadowing rt's `sym` column inside the
-// where clause. Defined as a proper namespaced function (not a
-// local inside ordersFromSpec) because a LOCAL helper referenced
-// from inside an each/peach/over-iterated lambda loses visibility:
-// those iterators insert their own stack frame between the defining
-// function and the lambda, and q's local-variable visibility only
-// reaches one level up. Global names don't have that problem.
+//@func  | .synth.getMid
+//@param  | rt | table
+//@param  | ccy | symbol
+//@param  | t | timestamp
+//@desc
+// last known mid for ccy at/before time t. Parameter named `ccy`, not
+// `sym`, for the same reason as genTrades above - avoids shadowing
+// rt's `sym` column inside the where clause. Defined as a proper
+// namespaced function (not a local inside ordersFromSpec) because a
+// LOCAL helper referenced from inside an each/peach/over-iterated
+// lambda loses visibility: those iterators insert their own stack
+// frame between the defining function and the lambda, and q's
+// local-variable visibility only reaches one level up. Global names
+// don't have that problem.
+//@desc
 .synth.getMid:{[rt;ccy;t] last (select mid from rt where sym=ccy,time<=t)`mid};
 
+//@func  | .synth.ordersFromSpec
+//@param  | spec | table
+//@param  | baselineRateTab | table
+//@desc
+// build the orders table .marketImpact.calc expects, using orderRate
+// captured from a PRE-injection snapshot of the rate series (i.e.
+// what you actually would have traded at, before your own footprint
+// moved anything).
+//@desc
 .synth.ordersFromSpec:{[spec;baselineRateTab]
   rates:{[rt;row] .synth.getMid[rt;row`sym;row`orderTime]}[baselineRateTab;] each spec;
   ([]orderID:til count spec; orderTime:spec`orderTime; orderRate:rates;
@@ -127,12 +189,15 @@
 //--------------------------------------------------------------------
 // End-to-end scenario builder
 //--------------------------------------------------------------------
-// .synth.buildScenario[] - one call that returns a dictionary with:
+//@func  | .synth.buildScenario
+//@desc
+// one call that returns a dictionary with:
 //   rate         the (impact-injected) reference rate series
 //   trades       trades sampled for .markout testing
 //   orders       orders matching the injected impact events
 //   groundTruth  the known temp/perm parameters used, for comparison
 //                against what .marketImpact.decompose recovers
+//@desc
 .synth.buildScenario:{[]
   sym:`EURUSD;
   start:.z.p - 0D06:00:00;      / 6-hour synthetic session
@@ -154,10 +219,15 @@
   `rate`trades`orders`groundTruth!(rate;trades;orders;spec)
  };
 
-// .synth.checkImpactRecovery[scenario;decomposeFn] - convenience: run
-// your .marketImpact.calc + .marketImpact.decompose over the
-// generated scenario and compare recovered temp/perm impact (in bps)
-// against the injected ground truth, side by side.
+//@func  | .synth.checkImpactRecovery
+//@param  | scenario | dict
+//@param  | calcFn | function
+//@param  | decomposeFn | function
+//@desc
+// convenience: run your .marketImpact.calc + .marketImpact.decompose
+// over the generated scenario and compare recovered temp/perm impact
+// (in bps) against the injected ground truth, side by side.
+//@desc
 .synth.checkImpactRecovery:{[scenario;calcFn;decomposeFn]
   calcRes:calcFn[scenario`orders;scenario`rate];
   rec:decomposeFn[calcRes;10;30];      / 10s peak window, 30s+ = permanent
