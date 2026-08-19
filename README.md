@@ -30,6 +30,10 @@ impact events baked in, and leaves three globals in the workspace:
 - `markout` — `.markout.calc` run over `scenario`'s trades against its rate series
 - `impact` — recovered temp/perm impact per order compared against the injected ground truth
 
+`impact` lines up the injected ground truth against what `.impact.decompose` recovered, per order:
+
+![q)impact console output](articles/images/impact_table.png)
+
 ### Layout
 
 ```
