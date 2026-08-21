@@ -94,8 +94,7 @@ through it:
 
 ```q
 .spread.priv.wavgAggCols:{[wCols]
-  aCols:enlist[`weight]!enlist(sum;`weight);
-  aCols,raze {enlist[x]!enlist(wavg;`weight;x)} each wCols
+  (`weight,wCols)!enlist[(sum;`weight)],{(wavg;`weight;x)} each wCols
  };
 
 .spread.wavgBy:{[tab;keyCols]
@@ -105,9 +104,12 @@ through it:
  };
 ```
 
+`wavgAggCols` builds the spec as one direct key-vector/value-vector zip — `` `weight,wCols `` for keys, `(sum;`weight)` followed by one `(wavg;`weight;col)` tuple per column for values — rather than building a one-item dict per column and unioning them. Same result, one dict allocation instead of `count[wCols]+1`.
+
 `.spread.byTime` and `.spread.byRegime` are both a handful of lines on top of the same
 helper — `byTime` swaps in a time-bucket parse-tree as the group-by key, `byRegime`
-just calls `wavgBy` with `` `aggression`marketStatus `` fixed as the keys. One weighting
+just calls `wavgBy` with whatever regime columns the caller passes it (e.g.
+`` `aggression`marketStatus ``) prepended to any extra keys. One weighting
 convention, three ways to slice it.
 
 ## On data
@@ -142,9 +144,9 @@ GBM plays in the markout/impact piece's synthetic rate series.
 ## Interpreting the results
 
 `scripts/initSpread.q` builds a 6,000-quote synthetic session (3 symbols, 3 aggression
-levels, two regimes), runs it through `.spread.byRegime` and `.spread.vsReference`,
-and leaves `recovery` in the workspace — the same check `test/testSpread.q` asserts
-on non-interactively:
+levels, two regimes), runs it through `.spread.wavgBy` and `.spread.vsReference`, and
+leaves `recovery` in the workspace — the same check `test/testSpread.q` asserts on
+non-interactively:
 
 ```
 q)recovery
@@ -195,6 +197,98 @@ the same step: `volSprd` jumps at the injected transition, `totalSprd` follows i
 and every other component stays flat. Two unrelated rollups agreeing on the same
 signal is itself a form of validation.
 
+## One more composition: share, not just level
+
+`byTime` answers "what's the average level of `volSprd`". A related but different
+question is "what *fraction* of the spread is `volSprd` responsible for, and does
+that change over the session" — level and share tell different stories whenever the
+other components are moving too. That question turns out to need no new machinery:
+`.spread.decompose` already melts a wide row into one row per component with a
+`pctOfTotal`, and `.spread.byTime`'s output is exactly quote-shaped (every component
+column plus `totalSprd`) — so decomposing a `byTime` result, rather than raw quotes,
+gives share-over-time for free:
+
+```q
+.spread.shareByTime:{[tab;bucket;extraKeyCols] .spread.decompose .spread.byTime[tab;bucket;extraKeyCols]};
+```
+
+The order matters. `byTime` has to run *first*: a component's share in a bucket must
+be the ratio of its own weighted average to the bucket's weighted total, not an
+average of each quote's individual `pctOfTotal` — averaging ratios directly gives the
+wrong answer the moment weight varies within the bucket. Doing it in this order,
+`pctOfTotal` sums to exactly 100 within every bucket by construction, the same
+invariant `.spread.waterfall`'s `cum_alphaSprd == totalSprd` gives for a single row.
+
+![Same signal, viewed as a share instead of a level](images/share.png)
+
+Same session, same transition, same component — but the y-axis is now "% of
+`totalSprd`" instead of price units. `volSprd` goes from ~6% of the quoted spread to
+~21% at the stress transition. That framing matters for a different audience than the
+level chart does: a pricing manager asking "is the vol buffer blowing out my margins
+today" cares about the share, not the raw number, and the two aren't always telling
+the same story — a component can hold a *constant* share while the total (and
+therefore its absolute level) moves, or vice versa.
+
+Building `.spread.decompose` to unkey its input defensively (`0!` before the column
+select) is what makes this composition possible at all: `byTime`'s output is a keyed
+table (every `?[]` group-by result is), and naively feeding a keyed table into code
+written against a plain one is exactly the kind of thing that looks fine until you
+actually chain two functions together.
+
+## The mean can hide the tail
+
+Every rollup so far — `wavgBy`, `byTime`, `byRegime`, `shareByTime` — answers with a
+single weighted average. An average can look perfectly calm while a chunk of the
+distribution behind it is not: three quotes at 1.30 and one at 4.00 average out to
+1.68, a number that undersells what actually happened on that fourth quote. A pricing
+desk asking "how bad does this ever get" needs the tail, not the center.
+
+`wavg` is a q built-in; there's no equivalent built-in for a *weighted* percentile, so
+`.spread.priv.wpctl` implements the standard nearest-rank method — sort by value, walk
+cumulative weight in that order, and return the value at the point the cumulative
+weight fraction first reaches `p`:
+
+```q
+.spread.priv.wpctl:{[p;w;x]
+  ord:iasc x;
+  cw:(sums w ord)%sum w;
+  (x ord) first where cw>=p
+ };
+```
+
+Nearest-rank rather than interpolated is a deliberate choice: the value returned was
+always an actual observed quote, matching how a "worst 1% of the time" read is
+usually meant in a risk context, rather than a smoothed statistical estimate. Because
+`wpctl` takes the same `(weight, value) -> number` shape `wavg` does, it drops
+straight into the same aggregate-spec pattern `.spread.priv.wavgAggCols` already
+established — `.spread.priv.pctlAggCols` is that function's percentile counterpart,
+and `.spread.pctlBy`/`.spread.pctlByTime` are `wavgBy`/`byTime` with it swapped in:
+
+```q
+.spread.pctlByTime:{[tab;bucket;extraKeyCols;percentiles]
+  t:$[`totalSprd in cols tab;tab;.spread.compose tab];
+  aggC:(extraKeyCols!extraKeyCols),enlist[`time]!enlist .spread.util.timeBucket[bucket;`time];
+  ?[t;();aggC;.spread.priv.pctlAggCols[percentiles;`totalSprd]]
+ };
+```
+
+![The whole distribution shifts together, not just the tail](images/pctl.png)
+
+Run against the same synthetic session as every other chart here, `p50`/`p90`/`p99`
+all jump at the stress transition together with the mean — the gap between them
+doesn't widen the way it would if the stress were a tail-specific event (an occasional
+very-wide quote pulling `p99` up while `p50` stayed put). That's not a null result: it
+*confirms* the injected stress here is a uniform level-shift affecting every quote by
+the same factor, exactly matching how `data/spreadGenerator.q` built it — `volSprd`'s
+multiplier applies to every stressed quote equally, not to a random few. Percentile
+analysis earns its place precisely by being able to tell these two situations apart;
+this session happens to land on the "uniform shift" side of that distinction, and
+knowing that for certain is worth more than assuming it.
+
+Sorting isn't free: `perf/perfSpread.q` shows `pctlByTime` at roughly 3.4x `byTime`'s
+cost (a full sort per bucket vs. one weighted sum), the one rollup in this library
+where reaching for the distribution instead of the mean has a real, measurable price.
+
 ## Reconciliation vs. an outside reference
 
 `.spread.vsReference` joins the model's composed total against any independently
@@ -236,16 +330,18 @@ ballpark.
 ## Appendix: performance
 
 Correctness aside, it's worth knowing what these functions actually cost. `perf/perfChk.q`
-times every public function in both `analytics/markOutImpact.q` and `analytics/spread.q`
-against realistic-sized synthetic data, via kdb+'s built-in `\ts` time+space profiler
-(called programmatically, `` system"ts do[n;expr]" ``, so the (ms;bytes) pair can be
-captured and averaged over `n` reps rather than only printed). Below is the `.util.*`
-and `.spread.*` subset — the shared offset-grid helpers plus every function discussed
-in this article — run at 5x the session size used above: a 216,000-row rate series,
-10,000 trades, 25 orders, and 30,000 quotes.
+is a shared timing harness (functions only); two per-article runners load it and time
+every public function in their own analytics file against realistic-sized synthetic
+data, via kdb+'s built-in `\ts` time+space profiler (called programmatically,
+`` system"ts do[n;expr]" ``, so the (ms;bytes) pair can be captured and averaged over
+`n` reps rather than only printed). Below is the `.util.*` and `.spread.*` subset —
+the shared offset-grid helpers plus every function discussed in this article — run at
+5x the session size used above: a 216,000-row rate series, 10,000 trades, 25 orders,
+and 30,000 quotes.
 
 ```
-q perf/perfChk.q
+q perf/perfMarkOut.q   # .util.* (this table's util rows)
+q perf/perfSpread.q    # .spread.* (this table's spread rows)
 ```
 
 ![Every .util.* and .spread.* function, timed at 5x scale](images/perf.png)
@@ -258,11 +354,15 @@ q perf/perfChk.q
 | `.spread.compose` | 100 | 0.05 |
 | `.spread.decompose` | 50 | 1.52 |
 | `.spread.waterfall` | 50 | 4.04 |
-| `.spread.priv.wavgAggCols` | 2000 | 0.0035 |
-| `.spread.util.timeBucket` | 2000 | 0.0005 |
+| `.spread.priv.wavgAggCols` | 2000 | 0.001 |
+| `.spread.util.timeBucket` | 2000 | <0.001 |
 | `.spread.wavgBy` | 100 | 0.47 |
 | `.spread.byRegime` | 100 | 0.59 |
 | `.spread.byTime` | 50 | 1.98 |
+| `.spread.shareByTime` | 50 | 1.9 |
+| `.spread.priv.wpctl` | 2000 | 0.582 |
+| `.spread.pctlBy` | 100 | 1.81 |
+| `.spread.pctlByTime` | 50 | 6.84 |
 | `.spread.vsReference` | 50 | 0.08 |
 | `.spread.onQuote` | 1000 | 0.004 |
 | `.spread.latest` | 1000 | <0.001 |
@@ -276,7 +376,14 @@ full-sized intermediate tables (one per component, or one cumulative column per
 component) rather than a single pass. The aggregations (`wavgBy`, `byRegime`, `byTime`)
 land under 2ms even grouping and weight-averaging all 30,000 rows — `byTime` is the
 most expensive of the three because its time-bucket key produces more distinct groups
-than a coarse regime tag does. `.spread.onQuote` (the real-time path) is flat at
+than a coarse regime tag does. `shareByTime` costs almost exactly what `byTime` alone
+does (1.9ms vs. 1.98ms) — `decompose` only runs against the small, already-aggregated
+bucket table it produces, not the original 30,000 rows, so melting it into shares is
+nearly free on top. The percentile rollups are the clear outliers: `pctlBy` costs
+roughly 3.8x `wavgBy`'s (1.81ms vs. 0.53ms), and `pctlByTime` costs roughly 3.4x
+`byTime`'s (6.84ms vs. 2.02ms) — the one place in this library where a full sort per
+group, rather than a running sum, actually shows up in the numbers.
+`.spread.onQuote` (the real-time path) is flat at
 0.004ms regardless of session size, as it should be — it upserts one row into a table
 keyed by a small, bounded (sym, aggression, marketStatus) key space, never touching
 the historical quote volume at all.

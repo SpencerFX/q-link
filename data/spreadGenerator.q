@@ -146,6 +146,6 @@
 / scenario:.spreadSynth.genSession[.z.p-0D02:00:00;2000;1.8];
 / scenario`groundTruth;
 / .spreadSynth.checkRecovery scenario;
-/ .spread.byRegime[scenario`quotes;`$()];
+/ .spread.byRegime[scenario`quotes;`aggression`marketStatus;`$()];
 / .spread.byTime[scenario`quotes;`minute;`$()];
 //====================================================================

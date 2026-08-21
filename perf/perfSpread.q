@@ -32,7 +32,11 @@ system "l ./perf/perfChk.q";
 .perf.priv.run[`spread.agg;`wavgBy;100;"(.spread.wavgBy[.perf.data.quotes;enlist`sym])"];
 .perf.priv.run[`spread.agg;`util.timeBucket;2000;"(.spread.util.timeBucket[`minute;`time])"];
 .perf.priv.run[`spread.agg;`byTime;50;"(.spread.byTime[.perf.data.quotes;`minute;`$()])"];
-.perf.priv.run[`spread.agg;`byRegime;100;"(.spread.byRegime[.perf.data.quotes;`$()])"];
+.perf.priv.run[`spread.agg;`byRegime;100;"(.spread.byRegime[.perf.data.quotes;`aggression`marketStatus;`$()])"];
+.perf.priv.run[`spread.agg;`shareByTime;50;"(.spread.shareByTime[.perf.data.quotes;`minute;`$()])"];
+.perf.priv.run[`spread.agg;`priv.wpctl;2000;"(.spread.priv.wpctl[0.9;.perf.data.quotes`weight;.perf.data.quotes`totalSprd])"];
+.perf.priv.run[`spread.agg;`pctlBy;100;"(.spread.pctlBy[.perf.data.quotes;enlist`sym;0.5 0.9 0.99])"];
+.perf.priv.run[`spread.agg;`pctlByTime;50;"(.spread.pctlByTime[.perf.data.quotes;`minute;`$();0.5 0.9 0.99])"];
 
 //====================================================================
 // .spread.* — reconciliation

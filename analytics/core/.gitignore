@@ -1,0 +1,4 @@
+hdb/*
+!hdb/.gitkeep
+tplog/*
+!tplog/.gitkeep

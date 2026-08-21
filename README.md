@@ -119,8 +119,10 @@ articles/spread/spreadAnalytics.md   the article itself
 |---|---|---|
 | `.spread` | `componentCols`, `quote` | the seven named components and the canonical input schema |
 | `.spread` | `compose`, `decompose`, `waterfall` | row-wise sum to `totalSprd`; melt to one row per component; cumulative build-up columns |
-| `.spread` | `wavgBy`, `byTime`, `byRegime` | weight-averaged rollup by arbitrary keys, by time bucket, or by aggression × market status — all three share `.spread.priv.wavgAggCols` |
+| `.spread` | `wavgBy`, `byTime`, `byRegime` | weight-averaged rollup by arbitrary keys, by time bucket, or by caller-supplied regime columns — all three share `.spread.priv.wavgAggCols` |
 | `.spread.util` | `timeBucket` | parse-tree for a `month`/`week`/`date`/`hour`/`minute`/`second` bucket, or a custom `xbar` timespan |
+| `.spread` | `shareByTime` | each component's % share of `totalSprd`, tracked over time — `decompose` applied to `byTime`'s own output |
+| `.spread` | `priv.wpctl`, `pctlBy`, `pctlByTime` | weighted percentiles (nearest-rank) of `totalSprd` by arbitrary keys or time bucket — the distributional counterpart to `wavgBy`/`byTime` |
 | `.spread` | `vsReference` | reconcile the composed total against an independent reference/realized spread series, in bps and pct |
 | `.spread` | `snap`, `onQuote`, `latest` | real-time path: keep the latest composed quote per (sym, aggression, marketStatus) key |
 
@@ -131,7 +133,7 @@ articles/spread/spreadAnalytics.md   the article itself
 | `.spreadSynth.priv.randNorm` | — | Box-Muller normals |
 | `.spreadSynth.config.*` | — | the injected ground truth: aggression tightening multipliers, stress-volatility multiplier, benchmark richness offset |
 | `.spreadSynth.genSession` | — | synthetic quote session, first half `normal`/second half `stressed`, with an independent benchmark series |
-| `.spreadSynth.checkRecovery` | — | compare `.spread.byRegime`/`.spread.vsReference`'s recovered values against the injected ground truth |
+| `.spreadSynth.checkRecovery` | — | compare `.spread.wavgBy`/`.spread.vsReference`'s recovered values against the injected ground truth |
 
 ## License
 
