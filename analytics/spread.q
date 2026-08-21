@@ -107,10 +107,10 @@
 
 //@func  | .spread.wavgBy
 //@param  | tab | 99 | quote-shaped table, with or without totalSprd
-//@param  | keyCols | 11 | grouping columns, symbol list (can be `())
+//@param  | keyCols | 11 | grouping columns, symbol list (can be `$())
 //@desc
 // weight-average every component plus totalSprd by arbitrary key
-// columns - e.g. `sym, `sym`aggression, or `() for a single overall
+// columns - e.g. `sym, `sym`aggression, or `$() for a single overall
 // row. A single big quote shouldn't count the same as a small one,
 // so this weights by `weight rather than a plain average.
 //@desc
@@ -137,7 +137,7 @@
 //@func  | .spread.byTime
 //@param  | tab | 99 | quote-shaped table, with or without totalSprd
 //@param  | bucket | -11 | `month`week`date`hour`minute`second, or a timespan atom
-//@param  | extraKeyCols | 11 | additional grouping columns, symbol list (can be `())
+//@param  | extraKeyCols | 11 | additional grouping columns, symbol list (can be `$())
 //@desc
 // weight-averaged spread build-up rolled up by time bucket, optionally
 // crossed with extra keys (e.g. `sym) - generalizes both a monthly/
@@ -153,7 +153,7 @@
 
 //@func  | .spread.byRegime
 //@param  | tab | 99 | quote-shaped table, with or without totalSprd
-//@param  | extraKeyCols | 11 | additional grouping columns, symbol list (can be `())
+//@param  | extraKeyCols | 11 | additional grouping columns, symbol list (can be `$())
 //@desc
 // weight-averaged spread build-up by aggression and marketStatus
 // (optionally crossed with extra keys) - how the same nominal quote
@@ -224,6 +224,6 @@
 / .spread.compose toy;
 / .spread.decompose toy;
 / .spread.waterfall toy;
-/ .spread.byRegime[toy;`()];
+/ .spread.byRegime[toy;`$()];
 / .spread.onQuote first toy; .spread.latest[];
 //====================================================================
