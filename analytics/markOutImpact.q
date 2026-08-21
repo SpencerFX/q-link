@@ -25,8 +25,8 @@
 // input is assumed non-overlapping and ascending.
 //@desc
 .util.buildGrid:{[posOffsets]
-  pos:asc distinct posOffsets except 0f;
-  (reverse neg pos),0f,pos 
+  pos:asc distinct (`float$posOffsets) except 0f;
+  (reverse neg pos),0f,pos
  };
 
 //@func  | .util.toTimespan
@@ -155,15 +155,15 @@
 // call on every new rate tick: complete any offsets now reachable
 //@desc
 .markout.onRate:{[rt]
-  hits:select from .markout.pending where sym=rt`sym, targetTime<=rt`time;
+  hits:0!select from .markout.pending where sym=rt`sym, targetTime<=rt`time;
   if[count hits;
-    `.markout.completed upsert update
+    `.markout.completed upsert (cols .markout.completed)#update
       offsetSec:.markout.gridSecs offsetIdx,
       mid:rt`mid,
       markoutVal:rt[`mid]-tradeRate,
       matchedTime:rt`time
       from hits;
-    delete from `.markout.pending where (tradeID;offsetIdx) in hits[`tradeID`offsetIdx]]
+    delete from `.markout.pending where sym=rt`sym, targetTime<=rt`time]
  };
 
 // how long a pending row may wait past its targetTime for a matching
@@ -179,7 +179,7 @@
 // Call periodically (e.g. off a timer) alongside `.markout.onRate`.
 //@desc
 .markout.sweepPending:{[now]
-  delete from `.markout.pending where now-targetTime>.markout.pendingTTL
+  delete from `.markout.pending where (now-targetTime)>.markout.pendingTTL
  };
 
 //--------------------------------------------------------------------
@@ -257,16 +257,16 @@
 // call on every new book tick: complete any offsets now reachable
 //@desc
 .impact.onBook:{[bk]
-  hits:select from .impact.pending where sym=bk`sym, targetTime<=bk`time;
+  hits:0!select from .impact.pending where sym=bk`sym, targetTime<=bk`time;
   if[count hits;
     dirSign:?[hits[`side]=`buy;1f;-1f];
-    `.impact.completed upsert update
+    `.impact.completed upsert (cols .impact.completed)#update
       offsetSec:.impact.gridSecs offsetIdx,
       mid:bk`mid,
       impact:dirSign*(bk[`mid]-orderRate),
       matchedTime:bk`time
       from hits;
-    delete from `.impact.pending where (orderID;offsetIdx) in hits[`orderID`offsetIdx]]
+    delete from `.impact.pending where sym=bk`sym, targetTime<=bk`time]
  };
 
 // tighter TTL than markout's, matching .impact's tighter -10s/+60s grid
@@ -281,6 +281,6 @@
 // Call periodically (e.g. off a timer) alongside `.impact.onBook`.
 //@desc
 .impact.sweepPending:{[now]
-  delete from `.impact.pending where now-targetTime>.impact.pendingTTL
+  delete from `.impact.pending where (now-targetTime)>.impact.pendingTTL
  };
 //====================================================================
