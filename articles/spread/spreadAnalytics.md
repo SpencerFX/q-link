@@ -58,6 +58,10 @@ A quote is modelled as seven named components summing to a total:
 | `fallbackSprd` | supplemental buffer, used when other inputs are thin |
 | `alphaSprd` | directional-signal adjustment |
 
+As an equation: `totalSprd` = `refSprd` + `baseSprd` + `clientSprd` + `volSprd` +
+`smoothSprd` + `fallbackSprd` + `alphaSprd` — or more generally, `totalSprd` = Σ over
+`componentCols`.
+
 ```
 q)meta scenario`quotes
 c           | t f a
@@ -83,6 +87,12 @@ cumulative column per component, so `cum_alphaSprd == totalSprd` on every row by
 construction. Both are exact, not fitted: no residual, no goodness-of-fit statistic,
 because there's nothing being estimated.
 
+For each component, `decompose` computes `contributionBps` = 1e4 × `componentValue`,
+and `pctOfTotal` = 100 × `componentValue` ÷ `totalSprd`. `waterfall`'s cumulative
+columns follow the same `componentCols` order: `cum_refSprd` = `refSprd`, and each
+subsequent `cum_c` = (previous `cum_c`) + `c`, so `cum_alphaSprd` = `totalSprd` by
+construction — the invariant the tests assert.
+
 ## One weighting rule, three entry points
 
 The part worth being careful about is aggregation. A single quote's spread means
@@ -104,7 +114,12 @@ through it:
  };
 ```
 
-`wavgAggCols` builds the spec as one direct key-vector/value-vector zip — `` `weight,wCols `` for keys, `(sum;`weight)` followed by one `(wavg;`weight;col)` tuple per column for values — rather than building a one-item dict per column and unioning them. Same result, one dict allocation instead of `count[wCols]+1`.
+The formula behind every one of those aggregates, for weights *w* and values *x*:
+wavg = Σ(*w*×*x*) ÷ Σ*w* — exactly what q's built-in `wavg` computes, applied
+independently to `totalSprd` and each of the seven components rather than to a plain
+unweighted mean.
+
+`wavgAggCols` builds the spec as one direct key-vector/value-vector zip — `` `weight,wCols `` for keys, `` (sum;`weight) `` followed by one `` (wavg;`weight;col) `` tuple per column for values — rather than building a one-item dict per column and unioning them. Same result, one dict allocation instead of `count[wCols]+1`.
 
 `.spread.byTime` and `.spread.byRegime` are both a handful of lines on top of the same
 helper — `byTime` swaps in a time-bucket parse-tree as the group-by key, `byRegime`
@@ -215,7 +230,9 @@ gives share-over-time for free:
 The order matters. `byTime` has to run *first*: a component's share in a bucket must
 be the ratio of its own weighted average to the bucket's weighted total, not an
 average of each quote's individual `pctOfTotal` — averaging ratios directly gives the
-wrong answer the moment weight varies within the bucket. Doing it in this order,
+wrong answer the moment weight varies within the bucket. In symbols, per bucket:
+`pctOfTotal` = 100 × wavg(`component`) ÷ wavg(`totalSprd`), not the average of each
+quote's own `componentValue` ÷ `totalSprd`. Doing it in this order,
 `pctOfTotal` sums to exactly 100 within every bucket by construction, the same
 invariant `.spread.waterfall`'s `cum_alphaSprd == totalSprd` gives for a single row.
 
@@ -255,6 +272,10 @@ weight fraction first reaches `p`:
   (x ord) first where cw>=p
  };
 ```
+
+In symbols: sort `x` ascending to get order *x(1) ≤ x(2) ≤ ... ≤ x(n)*, define the
+cumulative weight fraction *CW(j)* = (Σ *w(i)* for *i ≤ j*) ÷ Σ*w*, and return *x(j)*
+for the smallest *j* where *CW(j) ≥ p*.
 
 Nearest-rank rather than interpolated is a deliberate choice: the value returned was
 always an actual observed quote, matching how a "worst 1% of the time" read is
@@ -303,6 +324,9 @@ sourced spread series and reports richness in both bps and pct:
   update richnessBps:1e4*modelSprd-refSprd, richnessPct:100*(modelSprd-refSprd)%refSprd from res
  };
 ```
+
+In symbols: `richnessBps` = 1e4 × (`modelSprd` − `refSprd`), and `richnessPct` = 100 ×
+(`modelSprd` − `refSprd`) ÷ `refSprd`.
 
 The obvious use is a pricing-desk sanity check — is what we're quoting consistent
 with a competitor feed, a prior model version, or an internal benchmark rate — but
