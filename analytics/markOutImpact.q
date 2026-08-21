@@ -127,10 +127,15 @@
 // aggregate markout by sym and offset, weighted by trade notional rather than a plain
 // average (a single large trade shouldn't count the same as a small
 // one). `deals` supplies tradeID->notional/sym.
+// markoutRows (.markout.calc's output) is keyed by tradeID with grids/
+// markoutVal/stale nested one-list-per-trade; ungroup flattens that to
+// one row per (tradeID,offset) before the notional lookup and the
+// by-sym,grids aggregation below, both of which need flat rows to mean
+// what they say.
 //@desc
 .markout.notionalWeighted:{[markoutRows;deals]
-  j:(`tradeID xkey deals)[;`notional`sym] (`tradeID xkey markoutRows)`tradeID;
-  t:update notional:j`notional, sym:j`sym from markoutRows;
+  t:ungroup 0!markoutRows;
+  t:t lj `tradeID xkey deals;
   select markoutBps:1e4*wavg[notional;markoutVal] by sym,grids from t where not stale
  };
 

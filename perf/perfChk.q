@@ -49,11 +49,27 @@ system "l ./data/spreadGenerator.q";
 //--------------------------------------------------------------------
 // Benchmark data: markout/impact (analytics/markOutImpact.q)
 //--------------------------------------------------------------------
-.perf.data.scenario:.synth.buildScenario[];        / 2000 trades, 5 orders, ~43,200 rate ticks (6h @ 0.5s)
-.perf.data.trades:.perf.data.scenario`trades;
-.perf.data.rate:.perf.data.scenario`rate;
-.perf.data.orders:.perf.data.scenario`orders;
-.perf.data.book:.perf.data.scenario`rate;
+/ 5x .synth.buildScenario[]'s sizes (it takes no size params, so this
+/ rebuilds the same construction from the lower-level .synth.* pieces):
+/ 30h session @ 0.5s ticks (~216,000 rate ticks), 10,000 trades, 25 orders
+.perf.data.scaleFactor:5;
+.perf.data.sym:`EURUSD;
+.perf.data.start:.z.p - 0D06:00:00*.perf.data.scaleFactor;
+.perf.data.dtSecs:0.5;
+.perf.data.durSecs:.perf.data.scaleFactor*6*60*60;
+.perf.data.nTrades:.perf.data.scaleFactor*2000;
+.perf.data.nOrders:.perf.data.scaleFactor*5;
+.perf.data.base:.synth.genRateSeries[.perf.data.sym;.perf.data.start;.perf.data.durSecs;.perf.data.dtSecs;1.1000;5e-8;2e-5];
+.perf.data.orderTimes:.perf.data.start+`timespan$1e9*40*60*1+til .perf.data.nOrders;
+.perf.data.spec:([] orderTime:.perf.data.orderTimes; sym:.perf.data.nOrders#.perf.data.sym;
+  dirSign:.perf.data.nOrders#1 -1 1 -1 1f;
+  tempBps:.perf.data.nOrders#3.5 5.0 2.0 6.5 4.0;
+  permBps:.perf.data.nOrders#1.0 2.5 0.2 3.0 1.5;
+  halfLifeSecs:.perf.data.nOrders#8 15 5 20 10f);
+.perf.data.orders:.synth.ordersFromSpec[.perf.data.spec;.perf.data.base];
+.perf.data.rate:.synth.injectImpacts[.perf.data.base;.perf.data.spec];
+.perf.data.trades:.synth.genTrades[.perf.data.sym;.perf.data.nTrades;.perf.data.base;0.3];
+.perf.data.book:.perf.data.rate;
 
 .perf.data.deals:([] tradeID:.perf.data.trades`tradeID; sym:.perf.data.trades`sym;
   notional:1e6+9e6*(count .perf.data.trades)?1f);
@@ -68,7 +84,7 @@ system "l ./data/spreadGenerator.q";
 //--------------------------------------------------------------------
 // Benchmark data: spread (analytics/spread.q)
 //--------------------------------------------------------------------
-.perf.data.spread:.spreadSynth.genSession[.z.p-0D02:00:00;3000;1.5];   / 6,000 quotes
+.perf.data.spread:.spreadSynth.genSession[.z.p-0D02:00:00;15000;1.5];   / 30,000 quotes (5x)
 .perf.data.quotes:.perf.data.spread`quotes;
 .perf.data.benchmark:.perf.data.spread`benchmark;
 

@@ -232,3 +232,54 @@ Both pieces lean on the same discipline to know the code is actually right rathe
 than just plausible: build a synthetic scenario with a known answer baked in, and
 require the functions to reproduce that number, not merely something in the right
 ballpark.
+
+## Appendix: performance
+
+Correctness aside, it's worth knowing what these functions actually cost. `perf/perfChk.q`
+times every public function in both `analytics/markOutImpact.q` and `analytics/spread.q`
+against realistic-sized synthetic data, via kdb+'s built-in `\ts` time+space profiler
+(called programmatically, `` system"ts do[n;expr]" ``, so the (ms;bytes) pair can be
+captured and averaged over `n` reps rather than only printed). Below is the `.util.*`
+and `.spread.*` subset — the shared offset-grid helpers plus every function discussed
+in this article — run at 5x the session size used above: a 216,000-row rate series,
+10,000 trades, 25 orders, and 30,000 quotes.
+
+```
+q perf/perfChk.q
+```
+
+![Every .util.* and .spread.* function, timed at 5x scale](images/perf.png)
+
+| Function | Reps | Avg ms/call |
+|---|---|---|
+| `.util.buildGrid` | 2000 | 0.005 |
+| `.util.toTimespan` | 2000 | <0.001 |
+| `.util.explode` | 50 | 3.14 |
+| `.spread.compose` | 100 | 0.05 |
+| `.spread.decompose` | 50 | 1.52 |
+| `.spread.waterfall` | 50 | 4.04 |
+| `.spread.priv.wavgAggCols` | 2000 | 0.0035 |
+| `.spread.util.timeBucket` | 2000 | 0.0005 |
+| `.spread.wavgBy` | 100 | 0.47 |
+| `.spread.byRegime` | 100 | 0.59 |
+| `.spread.byTime` | 50 | 1.98 |
+| `.spread.vsReference` | 50 | 0.08 |
+| `.spread.onQuote` | 1000 | 0.004 |
+| `.spread.latest` | 1000 | <0.001 |
+
+A few things stand out. The pure grid/dict helpers (`buildGrid`, `toTimespan`,
+`priv.wavgAggCols`, `util.timeBucket`) are all sub-microsecond to low-microsecond —
+they're building small fixed-size structures, not touching the quote table at all.
+`.spread.compose` is essentially free (0.05ms for 30,000 rows) since it's one row-wise
+sum; `decompose` and `waterfall` cost more (1.5–4ms) because they each build several
+full-sized intermediate tables (one per component, or one cumulative column per
+component) rather than a single pass. The aggregations (`wavgBy`, `byRegime`, `byTime`)
+land under 2ms even grouping and weight-averaging all 30,000 rows — `byTime` is the
+most expensive of the three because its time-bucket key produces more distinct groups
+than a coarse regime tag does. `.spread.onQuote` (the real-time path) is flat at
+0.004ms regardless of session size, as it should be — it upserts one row into a table
+keyed by a small, bounded (sym, aggression, marketStatus) key space, never touching
+the historical quote volume at all.
+
+The two `<0.001` rows (`toTimespan`, `latest`) reported exactly `0` from the profiler —
+below `\ts`'s millisecond resolution at this call cost, not literally free.
