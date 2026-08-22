@@ -18,18 +18,24 @@ A working [kdb+/q](https://kx.com/) installation (`q` on your `PATH`).
 
 ## Layout
 
-```
-analytics/markOutImpact.q       .util.* / .markout.* / .impact.* — the analytics library
-data/generator.q                .gbm.* / .synth.* — synthetic GBM rate series + impact injection
-scripts/initMarkout.q           entry point: loads both and builds a scenario
-articles/markout/markOutImpact.pdf   the article itself
+**From Markout to Market Impact**
 
-analytics/spread.q               .spread.* — spread composition/decomposition/aggregation/reconciliation
-data/spreadGenerator.q           .spreadSynth.* — synthetic quote generator with known ground truth
-scripts/initSpread.q             entry point: loads both and builds a scenario, for interactive use
-test/testSpread.q                non-interactive test runner: hard assertions, exits non-zero on failure
-articles/spread/spreadAnalytics.md   the article itself
-```
+| File | Purpose |
+|---|---|
+| `analytics/markOutImpact.q` | `.util.*` / `.markout.*` / `.impact.*` — the analytics library |
+| `data/generator.q` | `.gbm.*` / `.synth.*` — synthetic GBM rate series + impact injection |
+| `scripts/initMarkout.q` | entry point: loads both and builds a scenario |
+| `articles/markout/markOutImpact.pdf` | the article itself |
+
+**Explaining the Spread**
+
+| File | Purpose |
+|---|---|
+| `analytics/spread.q` | `.spread.*` — spread composition/decomposition/aggregation/reconciliation |
+| `data/spreadGenerator.q` | `.spreadSynth.*` — synthetic quote generator with known ground truth |
+| `scripts/initSpread.q` | entry point: loads both and builds a scenario, for interactive use |
+| `test/testSpread.q` | non-interactive test runner: hard assertions, exits non-zero on failure |
+| `articles/spread/spreadAnalytics.md` | the article itself |
 
 ## Function reference
 
