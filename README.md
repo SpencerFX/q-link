@@ -25,6 +25,7 @@ A working [kdb+/q](https://kx.com/) installation (`q` on your `PATH`).
 | `analytics/markOutImpact.q` | `.util.*` / `.markout.*` / `.impact.*` — the analytics library |
 | `data/generator.q` | `.gbm.*` / `.synth.*` — synthetic GBM rate series + impact injection |
 | `scripts/initMarkout.q` | entry point: loads both and builds a scenario |
+| `test/testMarkOutImpact.q` | non-interactive test runner: hard assertions, exits non-zero on failure |
 | `articles/markout/markOutImpact.pdf` | the article itself |
 
 **Explaining the Spread**

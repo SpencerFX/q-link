@@ -44,7 +44,6 @@ transition and a known benchmark-richness offset baked in, and leaves:
 ## Interactive use vs. `test/`
 
 These scripts are for exploring at the console — nothing here asserts or exits
-non-zero on a wrong answer. [`test/`](../test/) covers that: `test/testSpread.q` runs
-the same kind of checks as hard pass/fail assertions, suitable for CI. There's no
-`test/testMarkout.q` yet — `initMarkout.q`'s `impact`/`markout` globals are the only
-way to eyeball that article's recovery today.
+non-zero on a wrong answer. [`test/`](../test/) covers that: `test/testMarkOutImpact.q`
+and `test/testSpread.q` run the same kind of checks as hard pass/fail assertions,
+suitable for CI.
