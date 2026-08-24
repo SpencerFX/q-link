@@ -10,6 +10,7 @@ post's word for it — they can pull the repo and reproduce every number and cha
 |---|---|
 | [From Markout to Market Impact](articles/markout/markOutImpact.pdf) — client deal markout vs. order/execution impact, and why both are the same computational shape underneath | `analytics/markOutImpact.q`, `data/generator.q`, `scripts/initMarkout.q` |
 | [Explaining the Spread](articles/spread/spreadAnalytics.md) — decomposing a quoted FX spread into named pricing components, and why aggregating that decomposition correctly matters more than estimating it | `analytics/spread.q`, `data/spreadGenerator.q`, `scripts/initSpread.q` |
+| [Logging Isn't Just print — It's a Table](articles/logging/loggingSRE.md) — a leveled logger that forwards into a shared `logs` table instead of (or alongside) a scrolling console, so an incident across several processes is one query instead of N log files | `sre/logToTab.q`, `scripts/initLogging.q` |
 
 ## Requirements
 
@@ -37,6 +38,16 @@ A working [kdb+/q](https://kx.com/) installation (`q` on your `PATH`).
 | `scripts/initSpread.q` | entry point: loads both and builds a scenario, for interactive use |
 | `test/testSpread.q` | non-interactive test runner: hard assertions, exits non-zero on failure |
 | `articles/spread/spreadAnalytics.md` | the article itself |
+
+**Logging Isn't Just print — It's a Table**
+
+| File | Purpose |
+|---|---|
+| `sre/logToTab.q` | `.logToTab.*` — a leveled logger that writes locally and forwards into a shared `logs` table |
+| `scripts/initLogging.q` | entry point: loads it, opens a loopback mon connection, runs a small demo scenario |
+| `test/testLogToTab.q` | non-interactive test runner: hard assertions, exits non-zero on failure |
+| `perf/perfLogToTab.q` | performance runner for `.logToTab.*` |
+| `articles/logging/loggingSRE.md` | the article itself |
 
 ## Function reference
 
@@ -84,6 +95,14 @@ A working [kdb+/q](https://kx.com/) installation (`q` on your `PATH`).
 | `.spreadSynth.config.*` | — | the injected ground truth: aggression tightening multipliers, stress-volatility multiplier, benchmark richness offset |
 | `.spreadSynth.genSession` | — | synthetic quote session, first half `normal`/second half `stressed`, with an independent benchmark series |
 | `.spreadSynth.checkRecovery` | — | compare `.spread.wavgBy`/`.spread.vsReference`'s recovered values against the injected ground truth |
+
+**`sre/logToTab.q`**
+
+| Namespace | Function | Purpose |
+|---|---|---|
+| `.logToTab` | `write` | format + print a leveled banner line if it passes the console threshold, and record it into the local `.logToTab.tab` ring buffer unconditionally |
+| `.logToTab` | `connect`, `log` | open (or lazily reopen) a connection to the mon process hosting `logs`; log locally via `write`, then forward the same message as one row, unconditionally, if connected |
+| `.logToTab` | `setLevel`, `mem`, `row` | set the active console threshold; current heap usage in MB; build the flat, column-ordered tuple `.log` publishes |
 
 ## License
 

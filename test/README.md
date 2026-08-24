@@ -10,6 +10,7 @@ eyeball), these throw on the first failing assertion and exit non-zero.
 |---|---|---|
 | `testMarkOutImpact.q` | `q test/testMarkOutImpact.q` | every public function in `analytics/markOutImpact.q` |
 | `testSpread.q` | `q test/testSpread.q` | every public function in `analytics/spread.q` |
+| `testLogToTab.q` | `q test/testLogToTab.q` | every public function in `sre/logToTab.q` |
 
 ## How `testMarkOutImpact.q` is built
 
@@ -73,3 +74,26 @@ written against a plain table can silently break the moment it's fed another
 function's keyed output — `compose`, `waterfall`, and `decompose` all had exactly
 this bug at one point, which is why the regression test pins it down explicitly
 rather than trusting it stays fixed.
+
+## How `testLogToTab.q` is built
+
+Runs single-process via a loopback connection (the script opens its own listening
+port, defines `logs` + `upd:insert`, and has `logToTab.q` connect back to itself) —
+see `scripts/initLogging.q`'s header comment for why that's a fair stand-in for a
+separate mon process.
+
+| # | What's checked | Against |
+|---|---|---|
+| 1 | The built-in `log` function still works — the table is `logs`, not `log` (a reserved q keyword) | `log exp 1` |
+| 2–3 | `write`: the ring buffer records a message even when it's below the print threshold, with the right code | `.logToTab.setLevel[\`FATAL]`, then a `DEBUG` call |
+| 4 | `connect`: a loopback handle opens successfully | `` `::5098 `` |
+| 5–7 | `log`'s return value carries the level/code/msg that were passed in | a hand-checked round trip |
+| 8–13 | The row that reaches `logs` has the right values in every column — `sym`, `level`, `code`, `message`, `pid`, `handle`, `mem` | the same round trip, read back from `logs` |
+| 14–15 | Forwarding ignores the console threshold: a below-threshold `INFO` call still lands a row in `logs`, with intact fields | `.logToTab.setLevel[\`ERROR]`, then an `INFO` call |
+| 16–17 | Lazy reconnect: nulling `.monHandle` between calls doesn't drop the next message — `.log` reopens the connection first | `.logToTab.monHandle:0Ni` before a call |
+| 18 | An unreachable mon address fails without signalling — reaching the assertion at all is part of the proof, since a signal would have aborted the script first | `` `:localhost:1 `` |
+
+Check #1 is the kind of thing that's easy to assume is fine and never actually
+verify — `log:([]...)` failing to parse is a `'assign` error, not a warning, so it's
+worth a real assertion that the library's own loading never triggered the same
+mistake under a different name.

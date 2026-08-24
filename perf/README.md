@@ -8,15 +8,17 @@ harness plus one runner per article, each timing every public function in its ow
 
 | File | Purpose |
 |---|---|
-| `perfChk.q` | shared harness — no article knowledge, functions only. Loaded by both runners below. |
+| `perfChk.q` | shared harness — no article knowledge, functions only. Loaded by all three runners below. |
 | `perfMarkOut.q` | times every `.util.*`/`.markout.*`/`.impact.*` function from `analytics/markOutImpact.q` |
 | `perfSpread.q` | times every `.spread.*` function from `analytics/spread.q` |
+| `perfLogToTab.q` | times every `.logToTab.*` function from `sre/logToTab.q` |
 
-Run either directly:
+Run any of them directly:
 
 ```bash
 q perf/perfMarkOut.q
 q perf/perfSpread.q
+q perf/perfLogToTab.q
 ```
 
 Each runner loads its analytics file, its data generator (`data/generator.q` /
@@ -76,3 +78,23 @@ See the [spread article](../articles/spread/spreadAnalytics.md#appendix-performa
 for the resulting numbers and their interpretation (why `compose` is nearly free,
 why the percentile rollups cost ~3.5x their `wavg` counterparts, why `shareByTime`
 costs almost nothing on top of `byTime`, and so on).
+
+## `perfLogToTab.q` — setup & sections
+
+Opens its own listening port and connects `sre/logToTab.q` back to it over a
+loopback handle (the same single-process stand-in `scripts/initLogging.q` and
+`test/testLogToTab.q` use), then raises the console threshold before timing so the
+numbers reflect the table-write/publish cost, not terminal I/O.
+
+| Section | What's timed |
+|---|---|
+| `logToTab` | `mem`, `row`, `write` (local only), `log` (connected), `log` (never configured to forward) |
+
+Deliberately not timed: the reconnect-attempt cost after a real drop, which is
+dominated by however long the OS takes to fail (or succeed) the underlying `hopen` —
+a couple of seconds when nothing is listening in testing on this machine, which
+would swamp every other number if averaged in. `test/testLogToTab.q` exercises and
+asserts that path instead of timing it.
+
+See the [logging article](../articles/logging/loggingSRE.md#appendix-performance)
+for the resulting numbers and their interpretation.
