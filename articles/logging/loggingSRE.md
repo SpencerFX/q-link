@@ -212,9 +212,9 @@ narrower, more mechanical problem: making sure the *evidence* for figuring eithe
 those out later, when something's actually gone wrong, exists somewhere queryable
 rather than scattered across N terminal scrollback buffers. It's less interesting
 mathematically and more important operationally — nobody debugs a 3am incident by
-re-deriving a spread decomposition from first principles; they start with `select
-from logs where timestamp within ... , level in \`WARN\`ERROR\`FATAL` and go from
-there.
+re-deriving a spread decomposition from first principles; they start with
+`` select from logs where timestamp within ... , level in `WARN`ERROR`FATAL` `` and
+go from there.
 
 The design choices here are small and mostly defensive: write locally regardless of
 whether forwarding works, forward regardless of the console threshold, never let a
@@ -228,7 +228,7 @@ you don't fully control, and one that isn't.
 `perf/perfLogToTab.q` times every public function against a live loopback
 connection — the same setup the demo and test suite use — via kdb+'s built-in `\ts`
 time+space profiler (`perf/perfChk.q`, shared with this repo's other two articles).
-Console printing is turned off for the timed runs (`.logToTab.setLevel[\`FATAL]`) so
+Console printing is turned off for the timed runs (`` .logToTab.setLevel[`FATAL] ``) so
 these numbers isolate the table-write/publish cost itself, not terminal I/O.
 
 ```
