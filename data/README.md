@@ -41,9 +41,9 @@ offset) rather than an unfalsifiable "should average to zero."
 | `.spreadSynth.genSession` | — | synthetic quote session, first half `` `normal ``/second half `` `stressed ``, plus an independent benchmark series with a known richness offset |
 | `.spreadSynth.checkRecovery` | — | compare `.spread.wavgBy`'s recovered stress multiplier and `.spread.vsReference`'s recovered richness against the injected ground truth |
 
-The injected ground truth: `volSprd` is multiplied by a known factor
+The injected ground truth: `riskSprd` is multiplied by a known factor
 (`stressVolMult`, default 4.0x) for every quote tagged `` `stressed ``, and
-`baseSprd`/`clientSprd` scale by a known per-aggression-level multiplier — so both a
+`baseSprd`/`tierSprd` scale by a known per-aggression-level multiplier — so both a
 regime rollup (`.spread.byRegime`) and an independent time rollup (`.spread.byTime`)
 should recover the same step. The `benchmark` series is built from `quotes`' own
 composed `totalSprd` minus a known constant offset (`injectedRichness`) plus noise,

@@ -29,7 +29,7 @@ trades:([] tradeID:`long$(); tradeTime:`timestamp$(); tradeRate:`float$(); sym:`
 rate:([] time:`timestamp$(); sym:`symbol$(); mid:`float$());
 orders:([] orderID:`long$(); orderTime:`timestamp$(); orderRate:`float$(); sym:`symbol$(); side:`symbol$());
 quotes:([] time:`timestamp$(); sym:`symbol$(); aggression:`symbol$(); marketStatus:`symbol$(); weight:`float$();
-  refSprd:`float$(); baseSprd:`float$(); clientSprd:`float$(); volSprd:`float$(); smoothSprd:`float$(); fallbackSprd:`float$(); alphaSprd:`float$());
+  anchorSprd:`float$(); baseSprd:`float$(); tierSprd:`float$(); riskSprd:`float$(); stabilitySprd:`float$(); fallbackSprd:`float$(); signalSprd:`float$());
 
 .tp.schemas:`trades`rate`orders`quotes;
 

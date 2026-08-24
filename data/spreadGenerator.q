@@ -4,11 +4,11 @@
 // Generates a stream of pricing-engine spread quotes across currency
 // pairs, aggression levels, and market-status regimes, with KNOWN
 // injected effects:
-//   - a stress multiplier applied to volSprd when marketStatus is
+//   - a stress multiplier applied to riskSprd when marketStatus is
 //     `stressed (first half of the session is `normal, second half
 //     is `stressed, so the transition is also visible in a time
 //     rollup)
-//   - an aggression tightening factor applied to baseSprd/clientSprd
+//   - an aggression tightening factor applied to baseSprd/tierSprd
 //     (more aggressive pricing -> tighter spread)
 //   - an independent benchmark spread series with a KNOWN constant
 //     richness offset baked in, for testing .spread.vsReference
@@ -43,10 +43,10 @@
 .spreadSynth.config.baseLevelBySym:.spreadSynth.config.syms!0.8 1.0 0.9;
 
 .spreadSynth.config.aggression:`low`medium`high;
-// how much aggression tightens baseSprd/clientSprd: high aggression == tighter
+// how much aggression tightens baseSprd/tierSprd: high aggression == tighter
 .spreadSynth.config.aggressionMult:.spreadSynth.config.aggression!1.0 0.7 0.4;
 
-// known multiplier applied to volSprd when marketStatus=`stressed
+// known multiplier applied to riskSprd when marketStatus=`stressed
 .spreadSynth.config.stressVolMult:4.0;
 
 // known offset (price units) by which the model quotes richer than
@@ -83,18 +83,18 @@
 
   stressFactor:?[marketStatus=`stressed;.spreadSynth.config.stressVolMult;1f];
 
-  refSprd:baseLevel*noise[n];
+  anchorSprd:baseLevel*noise[n];
   baseSprd:0.4*baseLevel*aggrFactor*noise[n];
-  clientSprd:0.15*baseLevel*aggrFactor*noise[n];
-  volSprd:0.1*baseLevel*stressFactor*noise[n];
-  smoothSprd:0.02*baseLevel*noise[n];
+  tierSprd:0.15*baseLevel*aggrFactor*noise[n];
+  riskSprd:0.1*baseLevel*stressFactor*noise[n];
+  stabilitySprd:0.02*baseLevel*noise[n];
   fallbackSprd:0.01*baseLevel*noise[n];
-  alphaSprd:0.05*baseLevel*noise[n];
+  signalSprd:0.05*baseLevel*noise[n];
   weight:1e5+1e6*n?1f;
 
   quotes:.spread.compose ([]
     time:times; sym; aggression; marketStatus; weight;
-    refSprd; baseSprd; clientSprd; volSprd; smoothSprd; fallbackSprd; alphaSprd);
+    anchorSprd; baseSprd; tierSprd; riskSprd; stabilitySprd; fallbackSprd; signalSprd);
 
   richness:.spreadSynth.config.injectedRichness;
   benchmark:update benchmarkSprd:totalSprd-richness+0.01*.spreadSynth.priv.randNorm[n]
@@ -116,7 +116,7 @@
 // (estimated by .spread.*) value, relative error, and whether it's
 // within tolerance. Two independent checks:
 //   stressVolMult    - recovered via .spread.wavgBy grouped by
-//                       marketStatus alone (volSprd[stressed]/volSprd[normal])
+//                       marketStatus alone (riskSprd[stressed]/riskSprd[normal])
 //   richnessBps       - recovered via .spread.vsReference against the
 //                       synthetic benchmark series (avg richnessBps)
 //@desc
@@ -125,7 +125,7 @@
 
   // .spread.wavgBy's group-by already returns a table keyed by marketStatus
   byStatus:.spread.wavgBy[q;enlist`marketStatus];
-  recStressMult:byStatus[enlist`stressed;`volSprd]%byStatus[enlist`normal;`volSprd];
+  recStressMult:byStatus[enlist`stressed;`riskSprd]%byStatus[enlist`normal;`riskSprd];
 
   cmp:.spread.vsReference[q;scenario`benchmark;`time`sym;`benchmarkSprd];
   recRichnessBps:avg exec richnessBps from cmp;

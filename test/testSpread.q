@@ -10,8 +10,8 @@ system"l ./data/spreadGenerator.q";
 
 toy:([]
   time:.z.p+0D00:00:00 0D00:00:01; sym:`EURUSD`EURUSD; aggression:`low`high; marketStatus:`normal`stressed;
-  weight:1e6 2e6; refSprd:0.8 0.8; baseSprd:0.3 0.3; clientSprd:0.1 0.05;
-  volSprd:0.05 0.4; smoothSprd:0.02 0.02; fallbackSprd:0 0.1; alphaSprd:0.05 0.15);
+  weight:1e6 2e6; anchorSprd:0.8 0.8; baseSprd:0.3 0.3; tierSprd:0.1 0.05;
+  riskSprd:0.05 0.4; stabilitySprd:0.02 0.02; fallbackSprd:0 0.1; signalSprd:0.05 0.15);
 
 // --- .spread.compose: totalSprd is the exact row-wise sum ---
 composed:.spread.compose toy;
@@ -20,7 +20,7 @@ expectedTotal:0.8+0.3+0.1+0.05+0.02+0+0.05;
 
 // --- .spread.waterfall: final cumulative column equals totalSprd exactly ---
 wf:.spread.waterfall toy;
-.test.assert["waterfall: cum_alphaSprd == totalSprd for every row";all wf[`cum_alphaSprd]=wf[`totalSprd]];
+.test.assert["waterfall: cum_signalSprd == totalSprd for every row";all wf[`cum_signalSprd]=wf[`totalSprd]];
 
 // --- .spread.decompose: componentValue sums back to totalSprd per row ---
 dc:.spread.decompose toy;
@@ -31,8 +31,8 @@ merged:sumBack lj `time`sym xkey select time,sym,totalSprd from composed;
 // --- .spread.byRegime: single-row-per-group weighted avg equals the input (n=1 per group here) ---
 br:.spread.byRegime[toy;`aggression`marketStatus;`$()];
 .test.assert["byRegime: wavg of a single row returns that row's value";
-  (1e-9>abs 0.8-exec first refSprd from br where aggression=`low) and
-  (1e-9>abs 0.4-exec first volSprd from br where aggression=`high)];
+  (1e-9>abs 0.8-exec first anchorSprd from br where aggression=`low) and
+  (1e-9>abs 0.4-exec first riskSprd from br where aggression=`high)];
 
 // --- .spread.vsReference: richness recovered exactly for a hand-built pair ---
 ref:([]sym:enlist`EURUSD;benchmarkSprd:enlist 1.0);
@@ -62,7 +62,7 @@ byT:0!.spread.pctlByTime[scenarioForPctl`quotes;`minute;`$();0.5 0.9 0.99];
 // this key value", not "get this column", and all three used to break on one ---
 byT:.spread.byTime[toy;`second;`$()];
 .test.assert["compose: works on keyed input and preserves keyed-ness";99h=type .spread.compose byT];
-.test.assert["waterfall: works on keyed input";all not null exec cum_alphaSprd from .spread.waterfall byT];
+.test.assert["waterfall: works on keyed input";all not null exec cum_signalSprd from .spread.waterfall byT];
 .test.assert["decompose: works on keyed input";0<count .spread.decompose byT];
 
 // --- synthetic session: ground truth recovery within 5% tolerance ---
@@ -71,16 +71,16 @@ rec:.spreadSynth.checkRecovery scenario;
 .test.assert["synthetic: stressVolMult recovered within tolerance";first exec pass from rec where check=`stressVolMult];
 .test.assert["synthetic: richnessBps recovered within tolerance";first exec pass from rec where check=`richnessBps];
 
-// --- .spread.shareByTime: shares sum to 100% per bucket, and volSprd's share is
+// --- .spread.shareByTime: shares sum to 100% per bucket, and riskSprd's share is
 // higher in the stressed regime than the normal one - same synthetic ground
 // truth as the stressVolMult check above, viewed as a share instead of a level ---
 shr:.spread.shareByTime[scenario`quotes;`month;enlist`marketStatus];
 totals:0!select totalPct:sum pctOfTotal by time,marketStatus from shr;
 .test.assert["shareByTime: pctOfTotal sums to 100 per bucket";all 1e-6>abs 100-totals`totalPct];
-volShr:0!select from shr where component=`volSprd;
+volShr:0!select from shr where component=`riskSprd;
 stressedShare:first exec pctOfTotal from volShr where marketStatus=`stressed;
 normalShare:first exec pctOfTotal from volShr where marketStatus=`normal;
-.test.assert["shareByTime: volSprd's share of totalSprd is higher when stressed";stressedShare>normalShare];
+.test.assert["shareByTime: riskSprd's share of totalSprd is higher when stressed";stressedShare>normalShare];
 
 -1 "";
 -1 "ALL TESTS PASSED";

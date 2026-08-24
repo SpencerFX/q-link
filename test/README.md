@@ -58,7 +58,7 @@ reusing one big scenario throughout:
 | # | What's checked | Against |
 |---|---|---|
 | 1 | `compose`: `totalSprd` is the exact row-wise sum | a 2-row hand-built table (`toy`), checked to 1e-9 |
-| 2 | `waterfall`: `cum_alphaSprd == totalSprd` on every row | `toy` |
+| 2 | `waterfall`: `cum_signalSprd == totalSprd` on every row | `toy` |
 | 3 | `decompose`: `componentValue` sums back to `totalSprd` per row | `toy` |
 | 4 | `byRegime`: a single-row group's weighted avg equals that row's value | `toy` (n=1 per group) |
 | 5 | `vsReference`: `richnessBps == 1e4*(totalSprd-benchmarkSprd)` exactly | a hand-built reference row |
@@ -66,7 +66,7 @@ reusing one big scenario throughout:
 | 7 | `pctlBy`/`pctlByTime`: `p50 <= p90 <= p99` in every group/bucket | a 2,000-quote synthetic session |
 | 8 | `compose`/`waterfall`/`decompose` all work on a **keyed** source (e.g. `byTime`'s own output), not just raw unkeyed quotes | `toy`, rolled up by `byTime` first |
 | 9 | Synthetic ground-truth recovery: injected `stressVolMult` and `richnessBps` both recovered within tolerance | `.spreadSynth.genSession`/`.spreadSynth.checkRecovery`, 6,000 quotes |
-| 10 | `shareByTime`: `pctOfTotal` sums to exactly 100 per bucket, and `volSprd`'s share is higher in the stressed regime than the normal one | the same synthetic session as #9 |
+| 10 | `shareByTime`: `pctOfTotal` sums to exactly 100 per bucket, and `riskSprd`'s share is higher in the stressed regime than the normal one | the same synthetic session as #9 |
 
 Check #8 exists because of a real bug class in this codebase: bracket/`#` access on
 a keyed table means "look up this key value," not "get this column," so any function

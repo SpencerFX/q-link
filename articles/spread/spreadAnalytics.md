@@ -2,27 +2,41 @@
 
 ## Summary
 
-A pricing engine's quoted spread is never just one number — it's the sum of several
-named adjustments stacked on top of a reference level: a base markup, a client-tier
-skew, a volatility buffer, quote-stability smoothing, a fallback component, and a
-directional-signal adjustment. In the context of this article and the code:
+In production FX pricing systems, a quoted spread is rarely a single, atomic figure —
+it is the sum of several independently governed adjustments layered on top of a
+reference level: a base markup, a client-tier skew, a volatility buffer,
+quote-stability smoothing, a fallback component, and a directional-signal adjustment.
+That composition isn't a modeling detail; it's operationally load-bearing. Two quotes
+can land on the same total spread by entirely different routes, and treating the total
+as one opaque number makes margin attribution, risk review, and client-fairness
+questions impossible to answer with any precision — you can see *that* pricing moved,
+not *why*.
 
-* **Composition** asks the simple direction: given the named components, what's the
-  total quoted spread? A one-line row-wise sum.
-* **Decomposition and aggregation** ask the harder question: once you have thousands
-  of quotes a day across symbols, aggression levels, and market regimes, how much of
-  the spread is coming from *which* component, on average, and does that hold up when
-  you slice by time instead of by tag? Get the weighting wrong and every rollup lies.
-* **Reconciliation** asks a third question: is what the model quoted actually
-  consistent with an independent reference — richer, cheaper, in line?
+This piece is organized around three questions a pricing or risk team asks of any
+spread build-up, in increasing order of engineering difficulty:
 
-This is a different shape of problem to [markout / market impact](../markout/markOutImpact.pdf).
-There, the components are hidden — you observe a single noisy price curve after a
-trade and have to *infer* a temporary/permanent split from it. Here, the components
-are already columns in the row the moment the quote is generated; nothing needs to be
-estimated. The engineering problem is entirely downstream: aggregating an additive
-decomposition without breaking the weighting, and checking the result against
-something outside the model.
+1. **Composition** — given the named components, what's the total quoted spread?
+   Structurally trivial, a one-line row-wise sum; the risk is entirely in making sure
+   every component is captured once and none is silently dropped or double-counted.
+2. **Decomposition and aggregation** — at production scale (thousands of quotes a day
+   across symbols, aggression tiers, and market regimes), how much of the spread is
+   attributable to *which* component, on average, and does that attribution survive
+   being cut by time instead of by tag? This is the question with the most at stake:
+   get the weighting wrong and every downstream rollup misattributes margin or risk to
+   the wrong component, without ever raising an error.
+3. **Reconciliation** — is what the model actually quoted consistent with an
+   independent reference — richer, cheaper, in line? This is what turns an internal
+   pricing decomposition into an externally checkable claim, rather than a number the
+   model is left grading on its own homework.
+
+Framed this way, the problem has a different shape from
+[markout / market impact](../markout/markOutImpact.pdf). There, the components are
+unobserved: a trade produces one noisy price curve, and a temporary/permanent split
+has to be statistically inferred from it after the fact. Here, the reverse is true —
+every component is already a column in the row at the moment the quote is generated,
+so nothing needs to be estimated. The engineering burden moves entirely downstream:
+aggregating an additive decomposition without corrupting the weighting, and validating
+the result against a source outside the model itself.
 
 ## Repo
 
@@ -38,10 +52,14 @@ something outside the model.
 
 ## The component model
 
-A quote is modelled as seven named components summing to a total:
+The starting assumption is that a quote's total spread decomposes losslessly into
+seven named, independently sourced components — the pricing engine's own build-up,
+not a statistical approximation of one reconstructed after the fact.
+`.spread.componentCols` fixes that vocabulary; `.spread.compose` implements the only
+claim this section makes: the total is the row-wise sum, nothing more.
 
 ```q
-.spread.componentCols:`refSprd`baseSprd`clientSprd`volSprd`smoothSprd`fallbackSprd`alphaSprd;
+.spread.componentCols:`anchorSprd`baseSprd`tierSprd`riskSprd`stabilitySprd`fallbackSprd`signalSprd;
 
 .spread.compose:{[tab]
   update totalSprd:sum value flip .spread.componentCols#tab from tab
@@ -50,16 +68,16 @@ A quote is modelled as seven named components summing to a total:
 
 | Component | What it represents |
 |---|---|
-| `refSprd` | reference/baseline spread before any adjustment |
+| `anchorSprd` | reference/baseline spread before any adjustment |
 | `baseSprd` | core pricing-engine markup |
-| `clientSprd` | client-tier/relationship skew |
-| `volSprd` | volatility risk buffer — widens under elevated vol |
-| `smoothSprd` | quote-stability smoothing — dampens jumps between quotes |
+| `tierSprd` | client-tier/relationship skew |
+| `riskSprd` | volatility risk buffer — widens under elevated vol |
+| `stabilitySprd` | quote-stability smoothing — dampens jumps between quotes |
 | `fallbackSprd` | supplemental buffer, used when other inputs are thin |
-| `alphaSprd` | directional-signal adjustment |
+| `signalSprd` | directional-signal adjustment |
 
-As an equation: `totalSprd` = `refSprd` + `baseSprd` + `clientSprd` + `volSprd` +
-`smoothSprd` + `fallbackSprd` + `alphaSprd` — or more generally, `totalSprd` = Σ over
+As an equation: `totalSprd` = `anchorSprd` + `baseSprd` + `tierSprd` + `riskSprd` +
+`stabilitySprd` + `fallbackSprd` + `signalSprd` — or more generally, `totalSprd` = Σ over
 `componentCols`.
 
 ```
@@ -71,36 +89,41 @@ sym         | s
 aggression  | s
 marketStatus| s
 weight      | f
-refSprd     | f
+anchorSprd     | f
 baseSprd    | f
-clientSprd  | f
-volSprd     | f
-smoothSprd  | f
+tierSprd  | f
+riskSprd     | f
+stabilitySprd  | f
 fallbackSprd| f
-alphaSprd   | f
+signalSprd   | f
 totalSprd   | f
 ```
 
-`.spread.decompose` melts that into one row per (quote, component) — the shape a
-stacked-bar or attribution view wants — and `.spread.waterfall` appends a running
-cumulative column per component, so `cum_alphaSprd == totalSprd` on every row by
-construction. Both are exact, not fitted: no residual, no goodness-of-fit statistic,
-because there's nothing being estimated.
+`.spread.decompose` and `.spread.waterfall` restate that same claim in the two shapes
+downstream analysis actually needs: `decompose` melts a wide row into one row per
+(quote, component) — the shape a stacked-bar or attribution view requires — and
+`waterfall` appends a running cumulative column per component, so
+`cum_signalSprd == totalSprd` holds on every row by construction. Neither is fitted:
+there is no residual and no goodness-of-fit statistic to report, because nothing here
+is being estimated — the exactness itself is the deliverable.
 
 For each component, `decompose` computes `contributionBps` = 1e4 × `componentValue`,
 and `pctOfTotal` = 100 × `componentValue` ÷ `totalSprd`. `waterfall`'s cumulative
-columns follow the same `componentCols` order: `cum_refSprd` = `refSprd`, and each
-subsequent `cum_c` = (previous `cum_c`) + `c`, so `cum_alphaSprd` = `totalSprd` by
-construction — the invariant the tests assert.
+columns follow the same `componentCols` order: `cum_anchorSprd` = `anchorSprd`, and each
+subsequent `cum_c` = (previous `cum_c`) + `c`, so `cum_signalSprd` = `totalSprd` by
+construction — the invariant the test suite asserts directly, rather than trusting
+that it holds.
 
 ## One weighting rule, three entry points
 
-The part worth being careful about is aggregation. A single quote's spread means
-nothing on its own — the number that matters is the size-weighted average across many
-quotes, and that weighting has to be applied *consistently* whether you're rolling up
-by regime, by time, or by nothing at all. Rather than writing that three times, one
-private helper builds the aggregate-column spec and every public rollup threads
-through it:
+Aggregation is where a decomposition like this typically breaks in practice. A single
+quote's spread carries no information on its own — what a pricing or risk review
+actually needs is the size-weighted average across many quotes, and that weight has to
+be applied *identically* regardless of whether the rollup is by regime, by time, or by
+nothing at all. An inconsistency here doesn't raise an error; it just produces a
+number that's quietly wrong. The fix applied here is structural rather than
+procedural: one private helper builds the aggregate-column specification once, and
+every public rollup is required to route through it.
 
 ```q
 .spread.priv.wavgAggCols:{[wCols]
@@ -119,49 +142,56 @@ wavg = Σ(*w*×*x*) ÷ Σ*w* — exactly what q's built-in `wavg` computes, appl
 independently to `totalSprd` and each of the seven components rather than to a plain
 unweighted mean.
 
-`wavgAggCols` builds the spec as one direct key-vector/value-vector zip — `` `weight,wCols `` for keys, `` (sum;`weight) `` followed by one `` (wavg;`weight;col) `` tuple per column for values — rather than building a one-item dict per column and unioning them. Same result, one dict allocation instead of `count[wCols]+1`.
+`wavgAggCols` builds the spec as a single key-vector/value-vector zip — `` `weight,wCols `` for keys, `` (sum;`weight) `` followed by one `` (wavg;`weight;col) `` tuple per column for values — rather than building a one-item dict per column and unioning them together. The result is identical; the cost isn't: one dict allocation instead of `count[wCols]+1`.
 
 `.spread.byTime` and `.spread.byRegime` are both a handful of lines on top of the same
-helper — `byTime` swaps in a time-bucket parse-tree as the group-by key, `byRegime`
-just calls `wavgBy` with whatever regime columns the caller passes it (e.g.
-`` `aggression`marketStatus ``) prepended to any extra keys. One weighting
-convention, three ways to slice it.
+helper: `byTime` swaps in a time-bucket parse-tree as the group-by key, `byRegime`
+calls `wavgBy` directly with whatever regime columns the caller supplies (e.g.
+`` `aggression`marketStatus ``) prepended to any extra keys. The result is one
+weighting convention enforced across three distinct entry points, rather than three
+independent chances to get it wrong.
 
 ## On data
 
-To check the aggregation and reconciliation logic against a known answer rather than
-plausible-looking output, `data/spreadGenerator.q` builds a synthetic session with
-three effects injected in advance:
+Validating an aggregation pipeline against real production data has an obvious
+failure mode: a plausible-looking number and a correct one are indistinguishable
+without a known answer to check against. `data/spreadGenerator.q` exists to remove
+that ambiguity — it builds a synthetic session with three effects injected in
+advance, each carrying a known ground-truth value the analytics functions are then
+required to recover:
 
 * **A market-status regime shift.** The first half of the session is tagged `normal`,
-  the second half `stressed`, and `volSprd` is multiplied by a known factor
-  (**4.0x**) for every stressed quote. Nothing else is touched.
-* **An aggression tightening.** `baseSprd` and `clientSprd` scale by a known
-  per-aggression-level multiplier (`low`=1.0, `medium`=0.7, `high`=0.4) — more
-  aggressive pricing quotes tighter.
-* **An independent benchmark series** built from the model's own `totalSprd` minus a
+  the second half `stressed`, and `riskSprd` is multiplied by a known factor
+  (**4.0x**) for every stressed quote — nothing else is touched, isolating the effect
+  to one component.
+* **An aggression tightening.** `baseSprd` and `tierSprd` scale by a known
+  per-aggression-level multiplier (`low`=1.0, `medium`=0.7, `high`=0.4), modeling the
+  standard pricing behavior that more aggressive tiers get tighter spreads.
+* **An independent benchmark series**, built from the model's own `totalSprd` minus a
   known constant offset (**0.05** price units, i.e. 500 on the `1e4*` bps convention
   `.spread.vsReference` uses) plus noise — standing in for a rate the model didn't
-  produce itself, for testing reconciliation.
+  produce itself, specifically to exercise the reconciliation path.
 
 ```q
 stressFactor:?[marketStatus=`stressed;.spreadSynth.config.stressVolMult;1f];
-volSprd:0.1*baseLevel*stressFactor*noise[n];
+riskSprd:0.1*baseLevel*stressFactor*noise[n];
 ...
 benchmark:update benchmarkSprd:totalSprd-richness+0.01*.spreadSynth.priv.randNorm[n]
   from select time,sym,totalSprd from quotes;
 ```
 
-Note: this generator isn't a model of how a real pricing engine actually sets a
-spread — it's a controlled way to know the right answer in advance, the same role
-GBM plays in the markout/impact piece's synthetic rate series.
+To be clear about what this buys and what it doesn't: this generator is not a model
+of how a real pricing engine sets a spread. It's a controlled way to know the correct
+answer in advance — the same role GBM plays in the markout/impact article's synthetic
+rate series — so that "the function ran without error" and "the function is correct"
+remain distinguishable claims.
 
 ## Interpreting the results
 
-`scripts/initSpread.q` builds a 6,000-quote synthetic session (3 symbols, 3 aggression
-levels, two regimes), runs it through `.spread.wavgBy` and `.spread.vsReference`, and
-leaves `recovery` in the workspace — the same check `test/testSpread.q` asserts on
-non-interactively:
+`scripts/initSpread.q` runs the recovery check end to end: a 6,000-quote synthetic
+session (3 symbols, 3 aggression levels, two regimes) through `.spread.wavgBy` and
+`.spread.vsReference`, leaving `recovery` in the workspace as the result — the same
+assertion `test/testSpread.q` runs non-interactively as a pass/fail gate:
 
 ```
 q)recovery
@@ -172,93 +202,96 @@ richnessBps   500      500.2515  0.05029823 1
 ```
 
 * **stressVolMult** — grouping all 6,000 quotes by `marketStatus` alone and taking
-  the ratio of average `volSprd` (stressed ÷ normal) recovers the injected 4.0x
+  the ratio of average `riskSprd` (stressed ÷ normal) recovers the injected 4.0x
   multiplier to within ~0.1%.
 * **richnessBps** — joining the model's composed `totalSprd` against the independent
   benchmark series on `` `time`sym `` via `.spread.vsReference` and averaging the
   recovered `richnessBps` recovers the injected 500-unit richness to within ~0.05%.
 
-The aggression effect isn't in the automated check above, but it's directly visible
-in `.spread.byRegime`'s output — comparing `low` against `high` aggression *within
-the same* `normal` market status:
+The aggression effect isn't covered by the automated check above, but the same
+recovery is directly visible in `.spread.byRegime`'s output — comparing `low`
+against `high` aggression *within the same* `normal` market status:
 
 ```
-aggression marketStatus  baseSprd   clientSprd
+aggression marketStatus  baseSprd   tierSprd
 low        normal        0.3585052  0.1343631
 high       normal        0.1438458  0.05404622
 ```
 
-`0.1438458 / 0.3585052 ≈ 0.401` and `0.05404622 / 0.1343631 ≈ 0.402` — both land on
-the injected `` aggressionMult[`high] `` of 0.4, recovered independently for two
-different components.
+`0.1438458 / 0.3585052 ≈ 0.401` and `0.05404622 / 0.1343631 ≈ 0.402` — both
+independently converge on the injected `` aggressionMult[`high] `` of 0.4, recovered
+from two unrelated components without being asked to agree.
 
 ![Same quote, priced two ways](images/composition.png)
 
-That chart picks two realistic composite scenarios rather than isolating one
-variable — a calm, low-aggression quote versus an aggressive quote issued into a
-stressed market — and it's worth noticing what the totals do: **1.55 vs. 1.53,
-almost unchanged.** The tighter base markup and client skew from aggressive pricing
-very nearly cancel the wider volatility buffer from the stress regime. A dashboard
-that only shows `totalSprd` would report these two quotes as practically identical;
-the decomposition shows they got there by two completely different routes. That gap
-— same total, different composition — is the entire reason to keep the components
-around instead of collapsing to one number at write time.
+That chart deliberately compares two realistic composite scenarios rather than
+isolating a single variable — a calm, low-aggression quote against an aggressive
+quote issued into a stressed market — and the result worth noting is what the totals
+do: **1.55 vs. 1.53, effectively unchanged.** The tighter base markup and client skew
+from aggressive pricing nearly cancel the wider volatility buffer from the stress
+regime. A dashboard reporting only `totalSprd` would flag these two quotes as
+practically identical; the decomposition shows they arrived there by two entirely
+different routes. That gap — same total, different composition — is the operational
+case for keeping the components addressable, rather than collapsing them to one
+number at write time.
 
-![volSprd carries the regime shift](images/regime_shift.png)
+![riskSprd carries the regime shift](images/regime_shift.png)
 
 The second chart rolls the same session up by `` .spread.byTime[quotes;`minute;`$()] ``
-instead of by regime tag — a completely independent aggregation path — and recovers
-the same step: `volSprd` jumps at the injected transition, `totalSprd` follows it,
-and every other component stays flat. Two unrelated rollups agreeing on the same
-signal is itself a form of validation.
+instead of by regime tag — a fully independent aggregation path — and recovers the
+same signal: `riskSprd` jumps at the injected transition, `totalSprd` follows it, and
+every other component stays flat. Two unrelated rollups agreeing on the same result
+is itself a form of validation, distinct from either rollup being correct in
+isolation.
 
 ## One more composition: share, not just level
 
-`byTime` answers "what's the average level of `volSprd`". A related but different
-question is "what *fraction* of the spread is `volSprd` responsible for, and does
-that change over the session" — level and share tell different stories whenever the
-other components are moving too. That question turns out to need no new machinery:
-`.spread.decompose` already melts a wide row into one row per component with a
-`pctOfTotal`, and `.spread.byTime`'s output is exactly quote-shaped (every component
-column plus `totalSprd`) — so decomposing a `byTime` result, rather than raw quotes,
-gives share-over-time for free:
+`byTime` answers "what's the average level of `riskSprd`" — a related but distinct
+question is "what *fraction* of the spread is `riskSprd` responsible for, and does
+that change over the session." Level and share diverge whenever the other components
+are moving too, and a pricing review that only tracks level can miss a share shift
+entirely. Answering it required no new machinery: `.spread.decompose` already melts
+a wide row into one row per component with a `pctOfTotal`, and `.spread.byTime`'s
+output is quote-shaped by construction (every component column plus `totalSprd`) —
+so decomposing a `byTime` result instead of raw quotes gives share-over-time as a
+direct consequence, not a separate feature:
 
 ```q
 .spread.shareByTime:{[tab;bucket;extraKeyCols] .spread.decompose .spread.byTime[tab;bucket;extraKeyCols]};
 ```
 
-The order matters. `byTime` has to run *first*: a component's share in a bucket must
-be the ratio of its own weighted average to the bucket's weighted total, not an
-average of each quote's individual `pctOfTotal` — averaging ratios directly gives the
-wrong answer the moment weight varies within the bucket. In symbols, per bucket:
-`pctOfTotal` = 100 × wavg(`component`) ÷ wavg(`totalSprd`), not the average of each
-quote's own `componentValue` ÷ `totalSprd`. Doing it in this order,
-`pctOfTotal` sums to exactly 100 within every bucket by construction, the same
-invariant `.spread.waterfall`'s `cum_alphaSprd == totalSprd` gives for a single row.
+The order is not incidental. `byTime` has to run *first*: a component's share within
+a bucket is the ratio of its own weighted average to the bucket's weighted total —
+not an average of each quote's individual `pctOfTotal`, which produces the wrong
+answer as soon as weight varies within the bucket. In symbols, per bucket:
+`pctOfTotal` = 100 × wavg(`component`) ÷ wavg(`totalSprd`), not the mean of each
+quote's own `componentValue` ÷ `totalSprd`. Sequenced this way, `pctOfTotal` sums to
+exactly 100 within every bucket by construction — the same invariant
+`.spread.waterfall`'s `cum_signalSprd == totalSprd` provides at the single-row level.
 
 ![Same signal, viewed as a share instead of a level](images/share.png)
 
-Same session, same transition, same component — but the y-axis is now "% of
-`totalSprd`" instead of price units. `volSprd` goes from ~6% of the quoted spread to
-~21% at the stress transition. That framing matters for a different audience than the
-level chart does: a pricing manager asking "is the vol buffer blowing out my margins
-today" cares about the share, not the raw number, and the two aren't always telling
-the same story — a component can hold a *constant* share while the total (and
-therefore its absolute level) moves, or vice versa.
+Same session, same transition, same component — but the y-axis now reads "% of
+`totalSprd`" instead of price units. `riskSprd` moves from ~6% of the quoted spread to
+~21% at the stress transition. That framing serves a different reader than the level
+chart does: a pricing manager asking "is the vol buffer eroding my margin today"
+needs the share, not the raw number, and the two don't always move together — a
+component can hold a *constant* share while the total moves, or the reverse.
 
-Building `.spread.decompose` to unkey its input defensively (`0!` before the column
-select) is what makes this composition possible at all: `byTime`'s output is a keyed
-table (every `?[]` group-by result is), and naively feeding a keyed table into code
-written against a plain one is exactly the kind of thing that looks fine until you
-actually chain two functions together.
+Making `.spread.decompose` unkey its input defensively (`0!` before the column
+select) is what makes this composition possible at all. `byTime`'s output is a keyed
+table — every `?[]` group-by result is — and feeding a keyed table into code written
+against a plain one is exactly the kind of interface mismatch that looks fine in
+isolation and only surfaces once two functions are actually chained together.
 
 ## The mean can hide the tail
 
 Every rollup so far — `wavgBy`, `byTime`, `byRegime`, `shareByTime` — answers with a
-single weighted average. An average can look perfectly calm while a chunk of the
-distribution behind it is not: three quotes at 1.30 and one at 4.00 average out to
-1.68, a number that undersells what actually happened on that fourth quote. A pricing
-desk asking "how bad does this ever get" needs the tail, not the center.
+single weighted average, and an average can look stable while a meaningful part of
+the underlying distribution is not: three quotes at 1.30 and one at 4.00 average to
+1.68, a figure that materially understates what happened on that fourth quote. The
+question a pricing or risk desk actually needs answered — "how bad does this get" —
+is a tail question, not a center-of-mass one, and a mean alone cannot answer it.
 
 `wavg` is a q built-in; there's no equivalent built-in for a *weighted* percentile, so
 `.spread.priv.wpctl` implements the standard nearest-rank method — sort by value, walk
@@ -277,13 +310,14 @@ In symbols: sort `x` ascending to get order *x(1) ≤ x(2) ≤ ... ≤ x(n)*, de
 cumulative weight fraction *CW(j)* = (Σ *w(i)* for *i ≤ j*) ÷ Σ*w*, and return *x(j)*
 for the smallest *j* where *CW(j) ≥ p*.
 
-Nearest-rank rather than interpolated is a deliberate choice: the value returned was
-always an actual observed quote, matching how a "worst 1% of the time" read is
-usually meant in a risk context, rather than a smoothed statistical estimate. Because
-`wpctl` takes the same `(weight, value) -> number` shape `wavg` does, it drops
-straight into the same aggregate-spec pattern `.spread.priv.wavgAggCols` already
-established — `.spread.priv.pctlAggCols` is that function's percentile counterpart,
-and `.spread.pctlBy`/`.spread.pctlByTime` are `wavgBy`/`byTime` with it swapped in:
+Nearest-rank rather than interpolated is a deliberate choice: the value returned is
+always an actual observed quote, consistent with how a "worst 1% of the time" figure
+is conventionally read in a risk context, rather than a smoothed statistical estimate
+that no single quote ever produced. Because `wpctl` takes the same
+`(weight, value) -> number` shape `wavg` does, it drops directly into the same
+aggregate-spec pattern `.spread.priv.wavgAggCols` already established —
+`.spread.priv.pctlAggCols` is that function's percentile counterpart, and
+`.spread.pctlBy`/`.spread.pctlByTime` are `wavgBy`/`byTime` with it substituted in:
 
 ```q
 .spread.pctlByTime:{[tab;bucket;extraKeyCols;percentiles]
@@ -295,20 +329,21 @@ and `.spread.pctlBy`/`.spread.pctlByTime` are `wavgBy`/`byTime` with it swapped 
 
 ![The whole distribution shifts together, not just the tail](images/pctl.png)
 
-Run against the same synthetic session as every other chart here, `p50`/`p90`/`p99`
-all jump at the stress transition together with the mean — the gap between them
-doesn't widen the way it would if the stress were a tail-specific event (an occasional
-very-wide quote pulling `p99` up while `p50` stayed put). That's not a null result: it
-*confirms* the injected stress here is a uniform level-shift affecting every quote by
-the same factor, exactly matching how `data/spreadGenerator.q` built it — `volSprd`'s
-multiplier applies to every stressed quote equally, not to a random few. Percentile
-analysis earns its place precisely by being able to tell these two situations apart;
-this session happens to land on the "uniform shift" side of that distinction, and
-knowing that for certain is worth more than assuming it.
+Run against the same synthetic session as every other chart in this piece,
+`p50`/`p90`/`p99` all move at the stress transition together with the mean — the gap
+between them doesn't widen the way it would if the stress were a tail-specific event
+(an occasional very-wide quote pulling `p99` up while `p50` held steady). That's not
+an inconclusive result: it *confirms* that the injected stress here is a uniform
+level-shift affecting every quote equally, exactly matching how
+`data/spreadGenerator.q` constructed it — `riskSprd`'s multiplier applies to every
+stressed quote, not to a random subset. Distinguishing these two cases is precisely
+what percentile analysis is for; this session lands on the "uniform shift" side, and
+knowing that with certainty is worth more than assuming it from the mean alone.
 
 Sorting isn't free: `perf/perfSpread.q` shows `pctlByTime` at roughly 3.4x `byTime`'s
-cost (a full sort per bucket vs. one weighted sum), the one rollup in this library
-where reaching for the distribution instead of the mean has a real, measurable price.
+cost (a full sort per bucket vs. one weighted sum) — the one rollup in this library
+where trading the mean for the distribution has a measurable, quantified price rather
+than a theoretical one.
 
 ## Reconciliation vs. an outside reference
 
@@ -319,49 +354,52 @@ sourced spread series and reports richness in both bps and pct:
 .spread.vsReference:{[modelTab;refTab;keyCols;refCol]
   m:$[`totalSprd in cols modelTab;modelTab;.spread.compose modelTab];
   mSel:keyCols xkey ?[m;();0b;(keyCols!keyCols),enlist[`modelSprd]!enlist`totalSprd];
-  rSel:keyCols xkey ?[refTab;();0b;(keyCols!keyCols),enlist[`refSprd]!enlist refCol];
+  rSel:keyCols xkey ?[refTab;();0b;(keyCols!keyCols),enlist[`benchSprd]!enlist refCol];
   res:0!mSel,'rSel;
-  update richnessBps:1e4*modelSprd-refSprd, richnessPct:100*(modelSprd-refSprd)%refSprd from res
+  update richnessBps:1e4*modelSprd-benchSprd, richnessPct:100*(modelSprd-benchSprd)%benchSprd from res
  };
 ```
 
-In symbols: `richnessBps` = 1e4 × (`modelSprd` − `refSprd`), and `richnessPct` = 100 ×
-(`modelSprd` − `refSprd`) ÷ `refSprd`.
+In symbols: `richnessBps` = 1e4 × (`modelSprd` − `benchSprd`), and `richnessPct` = 100 ×
+(`modelSprd` − `benchSprd`) ÷ `benchSprd`.
 
-The obvious use is a pricing-desk sanity check — is what we're quoting consistent
-with a competitor feed, a prior model version, or an internal benchmark rate — but
-it's the same shape regardless of what `refTab` actually is: any two independently
-produced spread series, reconciled on shared keys.
+The immediate use case is a pricing-desk sanity check — is what's being quoted
+consistent with a competitor feed, a prior model version, or an internal benchmark
+rate — but the function makes no assumption about what `refTab` actually is. Any two
+independently produced spread series, reconciled on shared keys, fit the same shape:
+a required check, not a bespoke one built per comparison.
 
 ## Conclusions
 
-Spread decomposition and market impact both live under the same broad heading —
-pricing/post-trade analytics — and they're close to opposite problems. Market impact
-starts with one noisy number (price after the fact) and has to recover a hidden
-temporary/permanent structure from it, which is why that piece needed a parametric
-fit and a goodness-of-fit statistic to know if the recovery was any good. Spread
-decomposition starts with the structure already given — every component is a column
-the pricing engine already computed — so there's nothing to estimate. The entire job
-is downstream: aggregate an additive decomposition without breaking the weighting no
-matter which dimension you slice by, and check the result against something the model
-didn't produce itself.
+Spread decomposition and market impact sit under the same broad heading — pricing
+and post-trade analytics — while being close to opposite problems in shape. Market
+impact starts from one noisy observable (price after the fact) and has to recover a
+hidden temporary/permanent structure from it, which is why that analysis required a
+parametric fit and a goodness-of-fit statistic before its recovery could be trusted.
+Spread decomposition starts from the opposite position: the structure is already
+given, every component is a column the pricing engine already computed, and there is
+nothing left to estimate. The entire engineering problem is downstream of that —
+aggregating an additive decomposition without corrupting the weighting regardless of
+which dimension it's sliced by, and validating the result against something the model
+itself did not produce.
 
-Both pieces lean on the same discipline to know the code is actually right rather
-than just plausible: build a synthetic scenario with a known answer baked in, and
-require the functions to reproduce that number, not merely something in the right
+Both pieces are held to the same standard for knowing the code is correct rather than
+merely plausible: construct a synthetic scenario with a known answer built in, and
+require the functions to reproduce that specific number — not something in the right
 ballpark.
 
 ## Appendix: performance
 
-Correctness aside, it's worth knowing what these functions actually cost. `perf/perfChk.q`
-is a shared timing harness (functions only); two per-article runners load it and time
-every public function in their own analytics file against realistic-sized synthetic
-data, via kdb+'s built-in `\ts` time+space profiler (called programmatically,
-`` system"ts do[n;expr]" ``, so the (ms;bytes) pair can be captured and averaged over
-`n` reps rather than only printed). Below is the `.util.*` and `.spread.*` subset —
-the shared offset-grid helpers plus every function discussed in this article — run at
-5x the session size used above: a 216,000-row rate series, 10,000 trades, 25 orders,
-and 30,000 quotes.
+Correctness established, the remaining question is cost: what this decomposition-
+and-aggregation pipeline actually takes to run at production-representative volumes.
+`perf/perfChk.q` is a shared, functions-only timing harness; per-article runners load
+it and time every public function in their own analytics file against
+realistic-sized synthetic data, via kdb+'s built-in `\ts` time+space profiler
+(invoked programmatically as `` system"ts do[n;expr]" ``, so the (ms;bytes) pair is
+captured and averaged over `n` reps rather than merely printed to console). The
+table below covers the `.util.*` and `.spread.*` subset — the shared offset-grid
+helpers plus every function discussed in this piece — run at 5x the session size
+used above: a 216,000-row rate series, 10,000 trades, 25 orders, and 30,000 quotes.
 
 ```
 q perf/perfMarkOut.q   # .util.* (this table's util rows)
@@ -393,24 +431,25 @@ q perf/perfSpread.q    # .spread.* (this table's spread rows)
 
 A few things stand out. The pure grid/dict helpers (`buildGrid`, `toTimespan`,
 `priv.wavgAggCols`, `util.timeBucket`) are all sub-microsecond to low-microsecond —
-they're building small fixed-size structures, not touching the quote table at all.
-`.spread.compose` is essentially free (0.05ms for 30,000 rows) since it's one row-wise
-sum; `decompose` and `waterfall` cost more (1.5–4ms) because they each build several
-full-sized intermediate tables (one per component, or one cumulative column per
-component) rather than a single pass. The aggregations (`wavgBy`, `byRegime`, `byTime`)
-land under 2ms even grouping and weight-averaging all 30,000 rows — `byTime` is the
+they build small, fixed-size structures and never touch the quote table. `.spread.compose`
+is close to free (0.05ms for 30,000 rows), being a single row-wise sum; `decompose`
+and `waterfall` cost more (1.5–4ms) because each builds several full-sized
+intermediate tables — one per component, or one cumulative column per component —
+rather than a single pass. The aggregations (`wavgBy`, `byRegime`, `byTime`) stay
+under 2ms even while grouping and weight-averaging all 30,000 rows; `byTime` is the
 most expensive of the three because its time-bucket key produces more distinct groups
 than a coarse regime tag does. `shareByTime` costs almost exactly what `byTime` alone
-does (1.9ms vs. 1.98ms) — `decompose` only runs against the small, already-aggregated
-bucket table it produces, not the original 30,000 rows, so melting it into shares is
-nearly free on top. The percentile rollups are the clear outliers: `pctlBy` costs
-roughly 3.8x `wavgBy`'s (1.81ms vs. 0.53ms), and `pctlByTime` costs roughly 3.4x
-`byTime`'s (6.84ms vs. 2.02ms) — the one place in this library where a full sort per
-group, rather than a running sum, actually shows up in the numbers.
-`.spread.onQuote` (the real-time path) is flat at
-0.004ms regardless of session size, as it should be — it upserts one row into a table
-keyed by a small, bounded (sym, aggression, marketStatus) key space, never touching
-the historical quote volume at all.
+does (1.9ms vs. 1.98ms), since `decompose` only runs against the small,
+already-aggregated bucket table it produces rather than the original 30,000 rows —
+melting it into shares is close to free on top. The percentile rollups are the clear
+outliers: `pctlBy` costs roughly 3.8x `wavgBy`'s (1.81ms vs. 0.53ms), and
+`pctlByTime` costs roughly 3.4x `byTime`'s (6.84ms vs. 2.02ms) — the one place in
+this library where a full sort per group, rather than a running sum, materially shows
+up in the numbers. `.spread.onQuote` (the real-time path) is flat at 0.004ms
+regardless of session size, as required — it upserts one row into a table keyed by a
+small, bounded (sym, aggression, marketStatus) key space, never touching the
+historical quote volume.
 
 The two `<0.001` rows (`toTimespan`, `latest`) reported exactly `0` from the profiler —
-below `\ts`'s millisecond resolution at this call cost, not literally free.
+below `\ts`'s millisecond resolution at this call cost, not a claim that the
+operation is literally free.

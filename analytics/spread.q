@@ -18,15 +18,15 @@
 // Component schema
 //--------------------------------------------------------------------
 // A quoted spread is modelled as the sum of seven named components:
-//   refSprd       reference/baseline spread before any adjustment
+//   anchorSprd       reference/baseline spread before any adjustment
 //   baseSprd      core pricing-engine markup
-//   clientSprd    client-tier/relationship skew (wider/narrower per counterparty)
-//   volSprd       volatility risk buffer (widens under elevated vol)
-//   smoothSprd    quote-stability smoothing (dampens jumps between quotes)
+//   tierSprd    client-tier/relationship skew (wider/narrower per counterparty)
+//   riskSprd       volatility risk buffer (widens under elevated vol)
+//   stabilitySprd    quote-stability smoothing (dampens jumps between quotes)
 //   fallbackSprd  supplemental/fallback buffer, used when other inputs are thin
-//   alphaSprd     directional-signal adjustment (model's market view)
+//   signalSprd     directional-signal adjustment (model's market view)
 // Order matters for .spread.waterfall (cumulative build, ref -> total).
-.spread.componentCols:`refSprd`baseSprd`clientSprd`volSprd`smoothSprd`fallbackSprd`alphaSprd;
+.spread.componentCols:`anchorSprd`baseSprd`tierSprd`riskSprd`stabilitySprd`fallbackSprd`signalSprd;
 
 // canonical input shape: one row per quote. `weight` is whatever the
 // caller wants to weight aggregates by (notional, time-alive, 1 for
@@ -35,8 +35,8 @@
 .spread.quote:([]
   time:`timestamp$(); sym:`symbol$(); aggression:`symbol$(); marketStatus:`symbol$();
   weight:`float$();
-  refSprd:`float$(); baseSprd:`float$(); clientSprd:`float$(); volSprd:`float$();
-  smoothSprd:`float$(); fallbackSprd:`float$(); alphaSprd:`float$());
+  anchorSprd:`float$(); baseSprd:`float$(); tierSprd:`float$(); riskSprd:`float$();
+  stabilitySprd:`float$(); fallbackSprd:`float$(); signalSprd:`float$());
 
 //--------------------------------------------------------------------
 // Compose / decompose / waterfall
@@ -85,10 +85,10 @@
 //@func  | .spread.waterfall
 //@param  | tab | 99 | quote-shaped table, with or without totalSprd - keyed or not
 //@desc
-// append one cumulative column per component (cum_refSprd,
-// cum_refSprd+baseSprd, ... up to cum_alphaSprd), in componentCols
+// append one cumulative column per component (cum_anchorSprd,
+// cum_anchorSprd+baseSprd, ... up to cum_signalSprd), in componentCols
 // order, so each row traces the running build from the reference
-// spread up to the full quoted spread. cum_alphaSprd == totalSprd by
+// spread up to the full quoted spread. cum_signalSprd == totalSprd by
 // construction - a handy invariant to assert in tests. Same keyed-
 // table caveat as .spread.compose: the component extraction below
 // unkeys a temporary copy to read columns, everything else runs
@@ -247,8 +247,8 @@
 //@param  | extraKeyCols | 11 | additional grouping columns, symbol list (can be `$())
 //@desc
 // each component's SHARE of the total spread, tracked over time - not
-// "what's the average level of volSprd" (that's .spread.byTime) but
-// "what fraction of the spread is volSprd responsible for, and does
+// "what's the average level of riskSprd" (that's .spread.byTime) but
+// "what fraction of the spread is riskSprd responsible for, and does
 // that change as the session goes on". Weight-averages each component
 // and totalSprd per bucket first via .spread.byTime, THEN turns each
 // bucket's shares into a fraction via .spread.decompose - deliberately
@@ -294,9 +294,9 @@
 .spread.vsReference:{[modelTab;refTab;keyCols;refCol]
   m:$[`totalSprd in cols modelTab;modelTab;.spread.compose modelTab];
   mSel:keyCols xkey ?[m;();0b;(keyCols!keyCols),enlist[`modelSprd]!enlist`totalSprd];
-  rSel:keyCols xkey ?[refTab;();0b;(keyCols!keyCols),enlist[`refSprd]!enlist refCol];
+  rSel:keyCols xkey ?[refTab;();0b;(keyCols!keyCols),enlist[`benchSprd]!enlist refCol];
   res:0!mSel,'rSel;
-  update richnessBps:1e4*modelSprd-refSprd, richnessPct:100*(modelSprd-refSprd)%refSprd from res
+  update richnessBps:1e4*modelSprd-benchSprd, richnessPct:100*(modelSprd-benchSprd)%benchSprd from res
  };
 
 //--------------------------------------------------------------------
@@ -309,8 +309,8 @@
 .spread.snap:update totalSprd:`float$() from
   ([sym:`symbol$(); aggression:`symbol$(); marketStatus:`symbol$()]
     time:`timestamp$(); weight:`float$();
-    refSprd:`float$(); baseSprd:`float$(); clientSprd:`float$(); volSprd:`float$();
-    smoothSprd:`float$(); fallbackSprd:`float$(); alphaSprd:`float$());
+    anchorSprd:`float$(); baseSprd:`float$(); tierSprd:`float$(); riskSprd:`float$();
+    stabilitySprd:`float$(); fallbackSprd:`float$(); signalSprd:`float$());
 
 //@func  | .spread.onQuote
 //@param  | q | 98 | single quote dict: sym, aggression, marketStatus, time, weight, plus .spread.componentCols
@@ -333,8 +333,8 @@
 // demo
 //====================================================================
 / toy:([] time:2#.z.p; sym:`EURUSD`EURUSD; aggression:`low`high; marketStatus:`normal`stressed;
-/   weight:1e6 2e6; refSprd:0.8 0.8; baseSprd:0.3 0.3; clientSprd:0.1 0.05;
-/   volSprd:0.05 0.4; smoothSprd:0.02 0.02; fallbackSprd:0 0.1; alphaSprd:0.05 0.15);
+/   weight:1e6 2e6; anchorSprd:0.8 0.8; baseSprd:0.3 0.3; tierSprd:0.1 0.05;
+/   riskSprd:0.05 0.4; stabilitySprd:0.02 0.02; fallbackSprd:0 0.1; signalSprd:0.05 0.15);
 / .spread.compose toy;
 / .spread.decompose toy;
 / .spread.waterfall toy;
