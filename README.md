@@ -8,63 +8,49 @@ post's word for it — they can pull the repo and reproduce every number and cha
 
 | Article | Code |
 |---|---|
-<<<<<<< Updated upstream
-| [From Markout to Market Impact](articles/markoutImpact.md) — client deal markout vs. order/execution impact, and why both are the same computational shape underneath | `analytics/markOutImpact.q`, `data/generator.q`, `scripts/initMarkout.q` |
-=======
 | [From Markout to Market Impact](articles/markout/markOutImpact.pdf) — client deal markout vs. order/execution impact, and why both are the same computational shape underneath | `analytics/markOutImpact.q`, `data/generator.q`, `scripts/initMarkout.q` |
 | [Explaining the Spread](articles/spread/spreadAnalytics.md) — decomposing a quoted FX spread into named pricing components, and why aggregating that decomposition correctly matters more than estimating it | `analytics/spread.q`, `data/spreadGenerator.q`, `scripts/initSpread.q` |
 | [Logging Isn't Just print — It's a Table](articles/logging/loggingSRE.md) — a leveled logger that forwards into a shared `logs` table instead of (or alongside) a scrolling console, so an incident across several processes is one query instead of N log files | `sre/logToTab.q`, `scripts/initLogging.q` |
 | [openDash: Bridging a Browser to kdb+ Over Async IPC](articles/openDash/openDash.md) — a Node.js gateway that correlates a kdb+ gateway's async, self-numbered replies over a pooled connection, rebuilds every browser query as a validated q literal, and fans one shared tick feed out to many WebSocket clients | *(separate project — see [`articles/openDash/README.md`](articles/openDash/README.md))* |
->>>>>>> Stashed changes
 
 ## Requirements
 
 A working [kdb+/q](https://kx.com/) installation (`q` on your `PATH`).
 
-## Running the code for "From Markout to Market Impact"
 
-From the repo root:
+## Layout
 
-```bash
-q scripts/initMarkout.q
-```
-
-This loads `.util.*`/`.markout.*`/`.impact.*` (`analytics/markOutImpact.q`) and the synthetic
-data generator (`data/generator.q`), builds a synthetic 6-hour EURUSD session with five known
-impact events baked in, and leaves three globals in the workspace:
-
-- `scenario` — dict of `rate` / `trades` / `orders` / `groundTruth` (the synthetic session)
-- `markout` — `.markout.calc` run over `scenario`'s trades against its rate series
-- `impact` — recovered temp/perm impact per order compared against the injected ground truth
-
-`impact` lines up the injected ground truth against what `.impact.decompose` recovered, per order:
-
-![q)impact console output](articles/images/impact_table.png)
-
-### Layout
-
-<<<<<<< Updated upstream
-```
-analytics/markOutImpact.q   .util.* / .markout.* / .impact.* — the analytics library
-data/generator.q            .gbm.* / .synth.* — synthetic GBM rate series + impact injection
-scripts/initMarkout.q       entry point: loads both and builds a scenario
-articles/markoutImpact.md   the article itself
-```
-
-### Function reference
-=======
-**openDash**
+**From Markout to Market Impact**
 
 | File | Purpose |
 |---|---|
-| `articles/openDash/openDash.md` | the article itself |
-| `articles/openDash/README.md` | what this article covers, and how it relates to `analytics/markOutImpact.q` |
+| `analytics/markOutImpact.q` | `.util.*` / `.markout.*` / `.impact.*` — the analytics library |
+| `data/generator.q` | `.gbm.*` / `.synth.*` — synthetic GBM rate series + impact injection |
+| `scripts/initMarkout.q` | entry point: loads both and builds a scenario |
+| `test/testMarkOutImpact.q` | non-interactive test runner: hard assertions, exits non-zero on failure |
+| `articles/markout/markOutImpact.pdf` | the article itself |
 
-No code lives in this repo for this one — `openDash` (gateway + dashboard)
-is a separate Node.js/React project; see the article for the architecture.
+**Explaining the Spread**
+
+| File | Purpose |
+|---|---|
+| `analytics/spread.q` | `.spread.*` — spread composition/decomposition/aggregation/reconciliation |
+| `data/spreadGenerator.q` | `.spreadSynth.*` — synthetic quote generator with known ground truth |
+| `scripts/initSpread.q` | entry point: loads both and builds a scenario, for interactive use |
+| `test/testSpread.q` | non-interactive test runner: hard assertions, exits non-zero on failure |
+| `articles/spread/spreadAnalytics.md` | the article itself |
+
+**Logging Isn't Just print — It's a Table**
+
+| File | Purpose |
+|---|---|
+| `sre/logToTab.q` | `.logToTab.*` — a leveled logger that writes locally and forwards into a shared `logs` table |
+| `scripts/initLogging.q` | entry point: loads it, opens a loopback mon connection, runs a small demo scenario |
+| `test/testLogToTab.q` | non-interactive test runner: hard assertions, exits non-zero on failure |
+| `perf/perfLogToTab.q` | performance runner for `.logToTab.*` |
+| `articles/logging/loggingSRE.md` | the article itself |
 
 ## Function reference
->>>>>>> Stashed changes
 
 **`analytics/markOutImpact.q`**
 
@@ -88,6 +74,36 @@ is a separate Node.js/React project; see the article for the architecture.
 | `.synth.ordersFromSpec`, `.synth.getMid` | — | build the orders table matching injected impact events |
 | `.synth.buildScenario` | — | one-call end-to-end scenario (rate + trades + orders + ground truth) |
 | `.synth.checkImpactRecovery` | — | compare `.impact.decompose`'s recovered temp/perm against injected ground truth |
+
+**`analytics/spread.q`**
+
+| Namespace | Function | Purpose |
+|---|---|---|
+| `.spread` | `componentCols`, `quote` | the seven named components and the canonical input schema |
+| `.spread` | `compose`, `decompose`, `waterfall` | row-wise sum to `totalSprd`; melt to one row per component; cumulative build-up columns |
+| `.spread` | `wavgBy`, `byTime`, `byRegime` | weight-averaged rollup by arbitrary keys, by time bucket, or by caller-supplied regime columns — all three share `.spread.priv.wavgAggCols` |
+| `.spread.util` | `timeBucket` | parse-tree for a `month`/`week`/`date`/`hour`/`minute`/`second` bucket, or a custom `xbar` timespan |
+| `.spread` | `shareByTime` | each component's % share of `totalSprd`, tracked over time — `decompose` applied to `byTime`'s own output |
+| `.spread` | `priv.wpctl`, `pctlBy`, `pctlByTime` | weighted percentiles (nearest-rank) of `totalSprd` by arbitrary keys or time bucket — the distributional counterpart to `wavgBy`/`byTime` |
+| `.spread` | `vsReference` | reconcile the composed total against an independent reference/realized spread series, in bps and pct |
+| `.spread` | `snap`, `onQuote`, `latest` | real-time path: keep the latest composed quote per (sym, aggression, marketStatus) key |
+
+**`data/spreadGenerator.q`**
+
+| Namespace | Function | Purpose |
+|---|---|---|
+| `.spreadSynth.priv.randNorm` | — | Box-Muller normals |
+| `.spreadSynth.config.*` | — | the injected ground truth: aggression tightening multipliers, stress-volatility multiplier, benchmark richness offset |
+| `.spreadSynth.genSession` | — | synthetic quote session, first half `normal`/second half `stressed`, with an independent benchmark series |
+| `.spreadSynth.checkRecovery` | — | compare `.spread.wavgBy`/`.spread.vsReference`'s recovered values against the injected ground truth |
+
+**`sre/logToTab.q`**
+
+| Namespace | Function | Purpose |
+|---|---|---|
+| `.logToTab` | `write` | format + print a leveled banner line if it passes the console threshold, and record it into the local `.logToTab.tab` ring buffer unconditionally |
+| `.logToTab` | `connect`, `log` | open (or lazily reopen) a connection to the mon process hosting `logs`; log locally via `write`, then forward the same message as one row, unconditionally, if connected |
+| `.logToTab` | `setLevel`, `mem`, `row` | set the active console threshold; current heap usage in MB; build the flat, column-ordered tuple `.log` publishes |
 
 ## License
 
