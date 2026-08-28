@@ -37,16 +37,7 @@ in this repo the way `spread.q` or `logToTab.q` are. It sits in front of
 reuses this repo's own `analytics/markOutImpact.q` unmodified as one of the
 modules it serves live (see "What's live today" below). The architecture:
 
-```
-browser (React dashboard)
-      │  HTTP  /api/query          WebSocket /stream
-      ▼
-openDash gateway  (Node.js)
-      │  q IPC (jkdb)                       q IPC (jkdb, .u.sub)
-      ▼                                     ▼
-openQ  gw :5013  ──►  rdb :5011 / hdb :5012      openQ  tp :5010  (or rdb)
-       .oq.gw.query                                   `upd feed
-```
+![openDash gateway architecture: browser to gateway over HTTP/WebSocket, gateway to openQ's gw (query path) and tp (stream path) over q IPC](images/architecture.png)
 
 No q/kdb+ runs in the browser, and the gateway is a small, dependency-light
 Node.js service (`ws` and a patched `jkdb` for the q IPC leg — nothing
@@ -66,19 +57,7 @@ of them. Whatever reply-shaped async message arrives next on a given
 connection can only belong to the query that connection is currently
 running.
 
-```js
-q.on("message", (obj) => {
-  if (slot.gen !== gen) return;
-  if (!looksLikeReply(obj) || !slot.pending) return; // identify chatter etc.
-  const p = slot.pending;
-  slot.pending = null;
-  slot.busy = false;
-  clearTimeout(p.timer);
-  if (obj.error) p.reject(new Error(qErrText(obj.data)));
-  else p.resolve({ data: obj.data, queryId: Number(obj.queryID) });
-  this._drain();
-});
-```
+![the message-reply handler: identifies a reply-shaped async payload, resolves or rejects whichever query this connection had pending, then drains the waiter queue](images/code-pool.png)
 
 Each pooled connection is a small state machine — `ready`/`busy`/`pending` —
 and a request that arrives when every connection is busy waits in a queue
@@ -98,15 +77,7 @@ the kind of client an injection concern is written for. Every dynamic piece
 of a query is validated and re-emitted as a **literal**, not interpolated as
 a string:
 
-```js
-const SYMBOL_RE = /^[A-Za-z][A-Za-z0-9_.]*$/;
-
-function symbolLit(name) {
-  assert(typeof name === "string" && SYMBOL_RE.test(name),
-    `invalid q symbol: ${JSON.stringify(name)}`);
-  return "`" + name;
-}
-```
+![symbolLit: a table/symbol name is only ever accepted as a q literal after passing a regex, never interpolated as a raw string](images/code-symbollit.png)
 
 `buildGwQuery` assembles the exact string a legitimate q client would send —
 `` .oq.gw.query[table;sCols;sTime;eTime;symb;whereC] `` — entirely out of
@@ -127,10 +98,7 @@ set, or neither, both work fine. So when a caller supplies only one bound,
 (`2000.01.01` / `2999.01.01`) rather than passing the mismatched pair
 through and letting the query fail:
 
-```js
-if (sTime !== NULL && eTime === NULL) eTime = MAX_TS;
-if (eTime !== NULL && sTime === NULL) sTime = MIN_TS;
-```
+![the openQ time-bound workaround: materialize the missing bound to the edge of the representable range rather than send a mismatched pair](images/code-tsfix.png)
 
 ## One feed, many filters
 
