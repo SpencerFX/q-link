@@ -8,7 +8,14 @@ post's word for it — they can pull the repo and reproduce every number and cha
 
 | Article | Code |
 |---|---|
+<<<<<<< Updated upstream
 | [From Markout to Market Impact](articles/markoutImpact.md) — client deal markout vs. order/execution impact, and why both are the same computational shape underneath | `analytics/markOutImpact.q`, `data/generator.q`, `scripts/initMarkout.q` |
+=======
+| [From Markout to Market Impact](articles/markout/markOutImpact.pdf) — client deal markout vs. order/execution impact, and why both are the same computational shape underneath | `analytics/markOutImpact.q`, `data/generator.q`, `scripts/initMarkout.q` |
+| [Explaining the Spread](articles/spread/spreadAnalytics.md) — decomposing a quoted FX spread into named pricing components, and why aggregating that decomposition correctly matters more than estimating it | `analytics/spread.q`, `data/spreadGenerator.q`, `scripts/initSpread.q` |
+| [Logging Isn't Just print — It's a Table](articles/logging/loggingSRE.md) — a leveled logger that forwards into a shared `logs` table instead of (or alongside) a scrolling console, so an incident across several processes is one query instead of N log files | `sre/logToTab.q`, `scripts/initLogging.q` |
+| [openDash: Bridging a Browser to kdb+ Over Async IPC](articles/openDash/openDash.md) — a Node.js gateway that correlates a kdb+ gateway's async, self-numbered replies over a pooled connection, rebuilds every browser query as a validated q literal, and fans one shared tick feed out to many WebSocket clients | *(separate project — see [`articles/openDash/README.md`](articles/openDash/README.md))* |
+>>>>>>> Stashed changes
 
 ## Requirements
 
@@ -36,6 +43,7 @@ impact events baked in, and leaves three globals in the workspace:
 
 ### Layout
 
+<<<<<<< Updated upstream
 ```
 analytics/markOutImpact.q   .util.* / .markout.* / .impact.* — the analytics library
 data/generator.q            .gbm.* / .synth.* — synthetic GBM rate series + impact injection
@@ -44,6 +52,19 @@ articles/markoutImpact.md   the article itself
 ```
 
 ### Function reference
+=======
+**openDash**
+
+| File | Purpose |
+|---|---|
+| `articles/openDash/openDash.md` | the article itself |
+| `articles/openDash/README.md` | what this article covers, and how it relates to `analytics/markOutImpact.q` |
+
+No code lives in this repo for this one — `openDash` (gateway + dashboard)
+is a separate Node.js/React project; see the article for the architecture.
+
+## Function reference
+>>>>>>> Stashed changes
 
 **`analytics/markOutImpact.q`**
 
