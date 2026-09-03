@@ -12,6 +12,7 @@ post's word for it — they can pull the repo and reproduce every number and cha
 | [Explaining the Spread](articles/spread/spreadAnalytics.md) — decomposing a quoted FX spread into named pricing components, and why aggregating that decomposition correctly matters more than estimating it | `analytics/spread.q`, `data/spreadGenerator.q`, `scripts/initSpread.q` |
 | [Logging Isn't Just print — It's a Table](articles/logging/loggingSRE.md) — a leveled logger that forwards into a shared `logs` table instead of (or alongside) a scrolling console, so an incident across several processes is one query instead of N log files | `sre/logToTab.q`, `scripts/initLogging.q` |
 | [openDash: Bridging a Browser to kdb+ Over Async IPC](articles/openDash/openDash.md) — a Node.js gateway that correlates a kdb+ gateway's async, self-numbered replies over a pooled connection, rebuilds every browser query as a validated q literal, and fans one shared tick feed out to many WebSocket clients | *(separate project — see [`articles/openDash/README.md`](articles/openDash/README.md))* |
+| [A Locate Isn't a Number — It's a Reservation](articles/primeFinance/primeFinance.md) — securities lending as a scored, constrained allocation problem, why a lender reference table is deliberately a plain join rather than a true kdb+ foreign key, and fee/risk calibration marked against real historical equity data instead of synthetic prices | *(separate project — see [`articles/primeFinance/README.md`](articles/primeFinance/README.md))* |
 
 ## Requirements
 
@@ -49,6 +50,16 @@ A working [kdb+/q](https://kx.com/) installation (`q` on your `PATH`).
 | `test/testLogToTab.q` | non-interactive test runner: hard assertions, exits non-zero on failure |
 | `perf/perfLogToTab.q` | performance runner for `.logToTab.*` |
 | `articles/logging/loggingSRE.md` | the article itself |
+
+**primeFinance**
+
+| File | Purpose |
+|---|---|
+| `articles/primeFinance/primeFinance.md` | the article itself |
+| `articles/primeFinance/README.md` | pointer to where the code actually lives |
+
+No code lives in this repo for this one — `primeFinance` is a module of
+[openQ](https://github.com/SpencerFX/openQ); see the article for the design.
 
 ## Function reference
 
