@@ -12,6 +12,9 @@ post's word for it — they can pull the repo and reproduce every number and cha
 | [Explaining the Spread](articles/spread/spreadAnalytics.md) — decomposing a quoted FX spread into named pricing components, and why aggregating that decomposition correctly matters more than estimating it | `analytics/spread.q`, `data/spreadGenerator.q`, `scripts/initSpread.q` |
 | [Logging Isn't Just print — It's a Table](articles/logging/loggingSRE.md) — a leveled logger that forwards into a shared `logs` table instead of (or alongside) a scrolling console, so an incident across several processes is one query instead of N log files | `sre/logToTab.q`, `scripts/initLogging.q` |
 | [openDash: Bridging a Browser to kdb+ Over Async IPC](articles/openDash/openDash.md) — a Node.js gateway that correlates a kdb+ gateway's async, self-numbered replies over a pooled connection, rebuilds every browser query as a validated q literal, and fans one shared tick feed out to many WebSocket clients | *(separate project — see [`articles/openDash/README.md`](articles/openDash/README.md))* |
+| [A Locate Isn't a Number — It's a Reservation](articles/primeFinance/primeFinance.md) — securities lending as a scored, constrained allocation problem, why a lender reference table is deliberately a plain join rather than a true kdb+ foreign key, and fee/risk calibration marked against real historical equity data instead of synthetic prices | *(separate project — see [`articles/primeFinance/README.md`](articles/primeFinance/README.md))* |
+| [A New Module Is Six JSON Files](articles/openQ/openQ.md) — the architecture behind openQ's domain-generic kdb+ core: schema-agnostic tp/cep/rdb/idb/hdb/gw roles, a config-driven module plug-in system, the RDB active/standby pair's pivot-and-harvest design, and the generic async gateway that fans one query out to however many backends it needs | *(separate project — see [`articles/openQ/README.md`](articles/openQ/README.md))* |
+| [A Hammer and a Hanging Man Are the Same Candle](articles/candle/candle.md) — a 32-pattern, TA-Lib-style candlestick library ported into openQ, why hammer/hangingMan are the identical shape read two opposite ways depending on trend context, and real verification (plus one genuine, unfixed bug found) against real historical equity data | *(separate project — see [`articles/candle/README.md`](articles/candle/README.md))* |
 
 ## Requirements
 
@@ -49,6 +52,38 @@ A working [kdb+/q](https://kx.com/) installation (`q` on your `PATH`).
 | `test/testLogToTab.q` | non-interactive test runner: hard assertions, exits non-zero on failure |
 | `perf/perfLogToTab.q` | performance runner for `.logToTab.*` |
 | `articles/logging/loggingSRE.md` | the article itself |
+
+**primeFinance**
+
+| File | Purpose |
+|---|---|
+| `articles/primeFinance/primeFinance.md` | the article itself |
+| `articles/primeFinance/README.md` | pointer to where the code actually lives |
+
+No code lives in this repo for this one — `primeFinance` is a module of
+[openQ](https://github.com/SpencerFX/openQ); see the article for the design.
+
+**openQ**
+
+| File | Purpose |
+|---|---|
+| `articles/openQ/openQ.md` | the article itself |
+| `articles/openQ/README.md` | pointer to where the code actually lives |
+
+No code lives in this repo for this one either — `openQ` is the platform
+`primeFinance` (and every other module) runs on; see the article for the
+architecture.
+
+**candle**
+
+| File | Purpose |
+|---|---|
+| `articles/candle/candle.md` | the article itself |
+| `articles/candle/README.md` | pointer to where the code actually lives |
+
+No code lives in this repo for this one either — `candle` is a module of
+[openQ](https://github.com/SpencerFX/openQ), used by its backtest engine;
+see the article for the design and the real verification behind it.
 
 ## Function reference
 
