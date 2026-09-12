@@ -15,6 +15,7 @@ post's word for it — they can pull the repo and reproduce every number and cha
 | [A Locate Isn't a Number — It's a Reservation](articles/primeFinance/primeFinance.md) — securities lending as a scored, constrained allocation problem, why a lender reference table is deliberately a plain join rather than a true kdb+ foreign key, and fee/risk calibration marked against real historical equity data instead of synthetic prices | *(separate project — see [`articles/primeFinance/README.md`](articles/primeFinance/README.md))* |
 | [A New Module Is Six JSON Files](articles/openQ/openQ.md) — the architecture behind openQ's domain-generic kdb+ core: schema-agnostic tp/cep/rdb/idb/hdb/gw roles, a config-driven module plug-in system, the RDB active/standby pair's pivot-and-harvest design, and the generic async gateway that fans one query out to however many backends it needs | *(separate project — see [`articles/openQ/README.md`](articles/openQ/README.md))* |
 | [A Hammer and a Hanging Man Are the Same Candle](articles/candle/candle.md) — a 32-pattern, TA-Lib-style candlestick library ported into openQ, why hammer/hangingMan are the identical shape read two opposite ways depending on trend context, and real verification (plus one genuine, unfixed bug found) against real historical equity data | *(separate project — see [`articles/candle/README.md`](articles/candle/README.md))* |
+| [Broker Tech: Retail FX and CFD Risk Analytics in kdb+/q](articles/brokerTech/brokerTech.md): exposure/concentration, execution quality, a five component toxicity score, A book/B book routing recommendation, and a from scratch k means client clustering step over a real MetaTrader Signals dataset, plus the openDash pages that let a desk analyst drag the routing and toxicity formulas live in the browser | *(separate project — see [`articles/brokerTech/README.md`](articles/brokerTech/README.md))* |
 
 ## Requirements
 
@@ -84,6 +85,18 @@ architecture.
 No code lives in this repo for this one either — `candle` is a module of
 [openQ](https://github.com/SpencerFX/openQ), used by its backtest engine;
 see the article for the design and the real verification behind it.
+
+**brokerTech**
+
+| File | Purpose |
+|---|---|
+| `articles/brokerTech/brokerTech.md` | the article itself |
+| `articles/brokerTech/README.md` | pointer to where the code actually lives |
+
+No code lives in this repo for this one either — `brokerTech` is a module
+of [openQ](https://github.com/SpencerFX/openQ), with a dashboard layer in
+a separate `openDash` repo; see the article for the design and the real
+verification behind it.
 
 ## Function reference
 
